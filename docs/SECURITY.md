@@ -5,10 +5,10 @@ This file tracks the common ways a quickly-built ("vibe-coded") app fails, and w
 | # | Risk | Status | How it's handled | Verified by |
 |---|---|---|---|---|
 | 1 | API key in the frontend | ✅ | The dashboard holds no secrets. The LLM key is server-side only. A user's own API key lives in `sessionStorage` for one tab and is sent as a Bearer header. | `test_no_secrets_in_frontend` |
-| 2 | No auth / role check | ✅ | Every `/api/v1` route requires a key with a scope (`read`, `write`, `admin`). 401 means "who are you?" and 403 means "not allowed". Keys can be revoked instantly. | `test_every_api_route_requires_a_key`, `test_scopes_are_enforced`, `test_revoked_key_stops_working` |
+| 2 | No auth / role check | ✅ | People sign in with email + password or Google; sessions live in an HttpOnly, SameSite=Lax cookie and cookie-authenticated writes must come from this site (CSRF check). Roles: user and admin (admin console at `/admin`, separate admin sign-in). The first admin comes from a one-time setup link printed at startup. Scripts use scoped API keys (`read`, `write`, `admin`); 401 means "who are you?", 403 "not allowed". Disabling a user or revoking a key takes effect immediately. | `tests/test_auth.py` (11 tests: sign-up, sign-in, admin gate, setup link, CSRF, open redirect, reset, Google, disabled users), `test_every_api_route_requires_a_key`, `test_scopes_are_enforced` |
 | 3 | SQL injection | ✅ | Every query is parameterised. The only f-strings in SQL interpolate constant column and table lists. Scenario assertions use an AST interpreter, never `eval`. | `test_sql_injection_payloads_are_inert`, `test_store_has_no_string_built_sql`, `test_assertions_are_safe_and_correct` |
 | 4 | XSS / no input sanitising | ✅ | All dynamic values pass through `esc()`. A strict CSP blocks inline scripts and handlers even if something slips through. Ingested runs have typed, pattern-checked fields. Checked in a real browser with `<img onerror>` and `<script>` payloads: nothing executed. | `test_security_headers_and_csp`, `test_ingest_rejects_html_in_typed_fields`, `test_frontend_escapes_dynamic_values` |
-| 5 | Passwords / keys not hashed | ✅ | Keys are 256-bit random tokens stored only as SHA-256 hashes and compared in constant time. The plaintext is shown once. There are no user passwords; if human logins are added, use argon2/scrypt or an identity provider. | `test_api_keys_are_hashed_at_rest` |
+| 5 | Passwords / keys not hashed | ✅ | User passwords use scrypt (salted, deliberately slow) and failed sign-ins take the same time whether or not the account exists. Sessions and reset links are random tokens stored only as SHA-256 hashes; reset links work once, for 60 minutes. API keys are 256-bit tokens stored as SHA-256 hashes and shown once. | `test_passwords_are_scrypt_hashed`, `test_password_reset_flow`, `test_api_keys_are_hashed_at_rest` |
 | 6 | CORS open to all origins | ✅ | CORS is off by default (same-origin only). Origins must be listed exactly, and `*` is refused at startup. | `test_cors_closed_by_default`, `test_cors_wildcard_is_refused`, `test_cors_allowlist` |
 | 7 | `.env` pushed to GitHub | ✅ | `.env`, databases and backups are git-ignored and docker-ignored. CI runs gitleaks on every push. | `test_env_files_are_ignored_and_absent`, CI `gitleaks` step |
 | 8 | No rate limit | ✅ | Token buckets per key (or per IP): reads 300/min, writes 60/min, expensive calls 10/min, all configurable. Also a cap on concurrent experiments, a 5 MB body cap, and bounded experiment sizes. | `test_rate_limit`, `test_request_size_limit`, `test_experiment_size_is_bounded` |
@@ -22,9 +22,9 @@ This file tracks the common ways a quickly-built ("vibe-coded") app fails, and w
 | 16 | No logs | ✅ | JSON logs to stdout with request id, route, status, latency and key id. Auth headers are never logged. | `test_logs_are_structured_and_never_contain_keys` |
 | 17 | No monitoring | ✅ | `/health` (liveness), `/ready` (readiness, no internals) and `/metrics` (Prometheus, admin-only). Example alert rules are in `docs/alerts.yml`. | `test_metrics_endpoint`, `test_readiness_reveals_no_internals` |
 | 18 | No backup or rollback | ✅ | `crashlab backup create` uses SQLite's online backup API plus an integrity check. `restore` refuses corrupt files and keeps the previous database for rollback. | `test_backup_restore_roundtrip`, `test_restore_refuses_corrupt_backup` |
-| 19 | No tests | ✅ | 116 tests (engine, evaluators, minimizer, SDK, CLI, API, security, website, real-browser checks), run in CI on every PR. | `pytest` |
+| 19 | No tests | ✅ | 128 tests (engine, evaluators, minimizer, SDK, CLI, API, security, website, real-browser checks), run in CI on every PR. | `pytest` |
 | 20 | Copy-paste, no structure | ✅ | One module per blueprint component, with no duplicated logic between CLI, API and SDK (all call the same engine). Ruff lints style, bugs and security rules in CI. | CI `ruff` step |
-| 21 | "Prompt fix = new bug" | ✅ | Nothing merges unless all 116 tests, lint, the dataset validation and the agent release gate pass. A fix that breaks something else fails CI before it ships. | CI |
+| 21 | "Prompt fix = new bug" | ✅ | Nothing merges unless all 128 tests, lint, the dataset validation and the agent release gate pass. A fix that breaks something else fails CI before it ships. | CI |
 | 22 | Can't debug your own code | ⚠️ partly | The tooling helps: request ids tie API errors to log lines, and the trace explorer replays any episode step by step. The real fix is human: read the code until you can explain every module. Start with `docs/ARCHITECTURE.md`, then `runner.py` → `evaluators.py` → `diagnosis.py`. | — |
 
 ## Not done yet (deliberately out of scope for a single-node slice)
@@ -34,7 +34,7 @@ This file tracks the common ways a quickly-built ("vibe-coded") app fails, and w
 - **Scheduled, off-site backups:** the command exists; schedule it (cron or k8s CronJob) and copy the output to object storage. A backup that's never been restored isn't proven, so run `restore` against a scratch path monthly.
 - **Error tracking:** Sentry or similar is not wired in yet. Logs carry request ids so it can be added without code changes elsewhere.
 - **Sandboxing customer agent code:** today agents run in-process. Before accepting untrusted code, run each episode in an isolated container (blueprint §9.1).
-- **Human user accounts / SSO:** access is by API key only.
+- **SSO (SAML/OIDC for companies):** sign-in is email + password or Google; enterprise SSO is not built.
 
 ## Website quality checklist
 

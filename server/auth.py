@@ -129,11 +129,10 @@ def notice(kind: str, text: str) -> str:
 
 def auth_card(*, title: str, lede: str, body: str, foot: str = "", admin: bool = False) -> str:
     # The cover of a case file: real findings from the included benchmark, never invented proof.
-    access = "Restricted · admin console" if admin else "Case files · sign in to open"
     return f"""
-<section class="auth-shell{' admin' if admin else ''}">
+<section class="auth-shell{' is-admin' if admin else ''}">
   <aside class="case-cover" aria-label="About AGENT CRASH LAB">
-    <div class="cover-strip"><span class="cover-mark">{LOGO}</span><span>{access}</span></div>
+    <div class="cover-strip"><span class="cover-mark">{LOGO}</span></div>
     <p class="cover-quote">Your agent passed the demo. <b>Will it survive production?</b></p>
     <dl class="cover-findings">
       <div><dt>Duplicate refunds</dt><dd>15% <span>→</span> 0%</dd></div>
@@ -522,7 +521,7 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
                      f'<pre class="code-copy"><code>{e(link)}</code></pre></div>') if link else ""
         return f"""
 <section class="admin">
-  <div class="docket-strip"><span>Admin console</span><span>Signed in as {e(me["email"])}</span></div>
+  <div class="docket-strip"><span>Admin console</span><span>Signed in as <b class="id">{e(me["email"])}</b></span></div>
   <header class="admin-head"><div><h1>Platform overview</h1>
     <p class="sub">Every account, its access, and what visitors sent you.</p></div>
     <div class="btn-row"><a class="btn" href="/app/">Dashboard</a><a class="btn" href="/docs">API reference</a></div></header>

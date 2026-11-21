@@ -14,11 +14,19 @@ Each failure comes back as:
 
 > Stress → Detect → Explain → Minimize → Prevent → Compare
 
-This repository is the working vertical slice from the blueprint: **one environment, two agent versions, a fault engine, the full failure-to-regression loop**, plus an SDK, CLI, REST API with live streaming, and a dashboard. It is all tested (116 tests, including security, website and real-browser suites) and runs with no external services.
+This repository is the working vertical slice from the blueprint: **one environment, two agent versions, a fault engine, the full failure-to-regression loop**, plus an SDK, CLI, REST API with live streaming, and a dashboard. It is all tested (128 tests, including security, website and real-browser suites) and runs with no external services.
 
 ---
 
 > **On Windows?** Double-click `run.bat`: it installs everything and opens the dashboard. New to Python? See the step-by-step guide: [`docs/HOW-TO-RUN.md`](docs/HOW-TO-RUN.md).
+
+## What's in the box
+
+- **Public website**: the landing page opens on a real investigation, then the full demo video (recorded from the app), how it works, measured results, pricing and FAQ.
+- **Accounts**: sign up and sign in with email + password or Google; a separate admin sign-in and an admin console for users, roles, reset links and contact messages; password reset by email.
+- **Dashboard**: experiments, live runs, failures, trace explorer, minimization, regression suite.
+- **Real models**: built-in Claude and Gemini tool-calling agents (`--agents llm`, `--agents gemini`).
+- **Deploy**: `render.yaml` for Render, Docker + Caddy for your own server. Step-by-step instructions are in [`docs/HOW-TO-RUN.md`](docs/HOW-TO-RUN.md), sections O–Q.
 
 ## Quick start (60 seconds)
 
@@ -30,15 +38,14 @@ crashlab run --agents v1 v2         # 200 episodes: 20 scenarios × 5 repeats ×
 crashlab serve                      # site on http://127.0.0.1:8000, dashboard at /app/, API docs at /docs
 ```
 
-Locally, `crashlab serve` runs without API keys, but only on 127.0.0.1. Bound to any other address, it refuses to start unless keys are required:
+`crashlab serve` requires sign-in. On a fresh database it prints a one-time link that creates the first admin account; after that, people sign up at `/signup`. `crashlab serve --no-auth` skips sign-in for a quick look, and only on 127.0.0.1. Scripts and CI use scoped API keys:
 
 ```bash
-crashlab keys create --name admin --scopes admin     # prints the key once; only its hash is stored
-CRASHLAB_AUTH=required crashlab serve --host 0.0.0.0
+crashlab keys create --name ci --scopes read,write   # prints the key once; only its hash is stored
 crashlab backup create                               # online backup + integrity check
 ```
 
-With Docker (auth is always on): `cp .env.example .env`, run `docker compose run --rm crashlab crashlab keys create --scopes admin`, then `docker compose up --build`.
+With Docker: `cp .env.example .env`, then `docker compose up --build`, and open the setup link from the logs. On Render, see `render.yaml` and the guide, section P.
 
 `crashlab export-demo --out dist/index.html` writes a self-contained HTML report with a full experiment embedded, so you can share results without running a server.
 
@@ -210,7 +217,7 @@ The root-cause engine reports evidence-linked hypotheses with a confidence level
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                 # 116 tests: engine, evaluators, ddmin, SDK, CLI, API, security, website, browser
+pytest -q                 # 128 tests: engine, evaluators, ddmin, SDK, CLI, API, security, website, browser
                           # (browser tests need: pip install playwright && playwright install chromium)
 ruff check crashlab server tests
 ```

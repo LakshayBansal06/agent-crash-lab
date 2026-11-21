@@ -76,6 +76,15 @@ if defined NEED_INSTALL (
   echo  [2/3] Libraries are up to date.
 )
 
+rem ---- Settings: load the filled-in values from .env (Google sign-in, Gemini key, ...).
+rem CRASHLAB_DB and CRASHLAB_AUTH are Docker settings, so they are skipped here.
+if exist ".env" (
+  for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
+    if not "%%B"=="" if /i not "%%A"=="CRASHLAB_DB" if /i not "%%A"=="CRASHLAB_AUTH" set "%%A=%%B"
+  )
+  echo        Settings loaded from .env
+)
+
 rem ---- 4. Start (or reuse) the server and open the browser ---------------
 netstat -ano | findstr /r /c:":%PORT% .*LISTENING" >nul
 if not errorlevel 1 (

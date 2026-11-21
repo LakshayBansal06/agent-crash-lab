@@ -172,19 +172,33 @@ Leave that window open (the server runs until you stop it), then open these in C
 
 | Address | What you'll see |
 |---|---|
-| http://127.0.0.1:8000 | Public website: landing page, FAQ, contact form, privacy policy |
+| http://127.0.0.1:8000 | Public website: landing page, demo video, pricing, FAQ, contact form, privacy policy |
+| http://127.0.0.1:8000/signup | Create a user account (email + password, or Google once set up) |
+| http://127.0.0.1:8000/login | Sign in |
+| http://127.0.0.1:8000/admin/login | Admin sign in → admin console at /admin |
 | http://127.0.0.1:8000/app/ | **The dashboard**: start experiments, watch live runs, inspect failures, trace explorer, regression tests |
 | http://127.0.0.1:8000/docs | Interactive API documentation (try any endpoint in the browser) |
+
+**First time only: create your admin account.** When the server starts on a new database, the window prints:
+
+```
+  FIRST RUN: create your admin account here (one-time link):
+  http://127.0.0.1:8000/setup?token=...
+```
+
+Hold **Ctrl** and click that link (or copy it into the browser), fill in your name, email and a password of at least 10 characters. You're now the admin. The link stops working once an admin exists.
+
+Then anyone (including you, with a second account) can sign up at `/signup`. Each account gets its own private workspace.
 
 In the dashboard, click **Start an experiment**, then **Start experiment**. You'll see 200 episodes run live, turning green (passed) or red (failed). Then open **Failures**, click a failure, and use **Minimize** and **Save as regression test**.
 
 **To stop the server:** click in the PowerShell window and press **Ctrl + C**.
 
-> Running locally like this needs no password or API key, and it only accepts connections from your own computer. That's on purpose (see section K).
+> Want a quick look without signing in? `crashlab serve --no-auth` turns sign-in off. It only works on your own computer (127.0.0.1), never on a public address.
 
 ---
 
-## G. Use a real AI model (Claude) instead of the built-in agents (optional)
+## G. Use a real AI model (Gemini or Claude) instead of the built-in agents (optional)
 
 The built-in agents v1 and v2 are scripted, so they cost nothing and give the same results every time. To test a **real LLM**:
 
@@ -202,6 +216,18 @@ crashlab run --agents v2 llm --repeats 2
 ```
 
 To choose a different Claude model, set `CRASHLAB_MODEL` the same way before running. The default is `claude-sonnet-5-5`.
+
+**Gemini works the same way.** Get a key at **https://aistudio.google.com/apikey**, then:
+
+```powershell
+$env:GEMINI_API_KEY = "paste-your-key-here"
+```
+
+```powershell
+crashlab run --agents v2 gemini --repeats 2
+```
+
+The default model is `gemini-3.8-flash`; set `GEMINI_MODEL` to use another. To keep a key without typing it every time, copy `.env.example` to `.env`, put the key after `GEMINI_API_KEY=`, and start with `run.bat` (it reads `.env`). In the dashboard, the Gemini agent becomes selectable under **New experiment** once the key is set.
 
 **Never** paste your key into any file inside `web/`, and never commit it to GitHub. The key is read only by the Python server, never sent to the browser.
 
@@ -231,7 +257,7 @@ pip install -e ".[dev]" ruff playwright
 python -m playwright install chromium
 ```
 
-Run all 116 tests (about one minute):
+Run all 128 tests (about one minute):
 
 ```powershell
 pytest -q
@@ -249,7 +275,7 @@ You want to see `116 passed` and `All checks passed!`. **Run these after every c
 
 ## J. Production-style run with Docker (optional)
 
-This runs it the way a real server would: locked down, with API keys always required.
+This runs it the way a real server would: locked down, sign-in always required.
 
 1. Start **Docker Desktop** and wait until it says it's running.
 2. Create your settings file from the template:
@@ -258,19 +284,13 @@ This runs it the way a real server would: locked down, with API keys always requ
 Copy-Item .env.example .env
 ```
 
-3. Create the first admin API key. It's printed **only once**, so copy it somewhere safe:
-
-```powershell
-docker compose run --rm crashlab crashlab keys create --name admin --scopes admin
-```
-
-4. Start it:
+3. Start it:
 
 ```powershell
 docker compose up --build
 ```
 
-5. Open http://127.0.0.1:8000/app/ and paste your key when the dashboard asks for it.
+4. In the log, find `FIRST RUN: create your admin account here` and open that link to create your admin account. Then open http://127.0.0.1:8000.
 
 To stop it, press **Ctrl + C**. To put it on the internet with HTTPS, follow the comments at the top of `docker-compose.yml` (you need a domain name and a server).
 
@@ -334,10 +354,86 @@ Other useful commands:
 | `crashlab` "is not recognized" | You forgot to activate: `.\.venv\Scripts\Activate.ps1` |
 | "running scripts is disabled" | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once (section D). |
 | "address already in use" / port 8000 busy | Another server is still running. Close it with Ctrl+C, or use another port: `crashlab serve --port 8001` |
-| Dashboard asks for an API key | You're running with auth on (Docker). Create one with `crashlab keys create`. |
+| Dashboard sends you to the sign-in page | Sign-in is on by default. Create an account at `/signup`, or create the admin with the setup link (section F.3). |
 | Browser shows an old version after you changed a file | Press **Ctrl + F5** to hard-refresh. |
 | LLM agent fails with 401 | Your `ANTHROPIC_API_KEY` is wrong or not set in **this** PowerShell window. |
-| Want a clean start | Stop the server and delete `crashlab.db` in the project folder. It's recreated on the next run. |
+| Want a clean start | Stop the server and delete `crashlab.db` in the project folder. It's recreated on the next run (and prints a new admin setup link). |
+| Lost the admin setup link | Stop and start the server again: while no admin exists, it prints a fresh link every start. |
+| Forgot a password | An admin opens `/admin` and clicks **Reset link** next to the user. With email set up (`SMTP_*` in `.env`), users can use **Forgot password?** themselves. |
+| "Continue with Google" says it didn't complete | The redirect URI in Google Cloud must exactly match the site address + `/auth/google/callback` (section O). |
+
+---
+
+## O. Turn on "Continue with Google" (optional, about 10 minutes)
+
+1. Go to **https://console.cloud.google.com**, sign in, and create a project (any name, e.g. "Agent Crash Lab").
+2. Open **APIs & Services → OAuth consent screen**. Choose **External**, fill in the app name and your email, and save. While it is in "Testing", add your own Google address under **Test users**.
+3. Open **APIs & Services → Credentials → Create credentials → OAuth client ID**. Application type: **Web application**.
+4. Under **Authorized redirect URIs**, add every address the site runs on, ending in `/auth/google/callback`:
+   - `http://127.0.0.1:8000/auth/google/callback` (your computer)
+   - `https://YOUR-SITE.onrender.com/auth/google/callback` (after deploying, section P)
+5. Click **Create**. Copy the **Client ID** and **Client secret**.
+6. Put them in `.env` (copy `.env.example` to `.env` first if you haven't):
+
+```
+GOOGLE_CLIENT_ID=paste-client-id
+GOOGLE_CLIENT_SECRET=paste-client-secret
+CRASHLAB_ADMIN_EMAILS=your.name@gmail.com
+```
+
+7. Restart with `run.bat`. The sign-in pages now show **Continue with Google**. Signing in with an email listed in `CRASHLAB_ADMIN_EMAILS` makes that account an admin.
+
+---
+
+## P. Put it on the internet with Render
+
+Render runs the app from your GitHub repository and gives it an `https://….onrender.com` address. The repo already contains everything Render needs (`render.yaml` and the `Dockerfile`).
+
+1. **Put the code on GitHub.** Create an empty **private** repository at https://github.com/new, then in the project folder:
+
+```powershell
+git remote add origin https://github.com/YOUR-NAME/agent-crash-lab.git
+```
+
+```powershell
+git push -u origin master
+```
+
+   (`.env` and the database are never uploaded: they are in `.gitignore`.)
+2. **Create a Render account** at https://render.com (you do this yourself) and connect your GitHub account.
+3. In Render: **New → Blueprint**, pick the repository. Render reads `render.yaml` and shows one web service with a 1 GB disk on the **Starter** plan (about $7 a month; the disk keeps accounts and results between deploys).
+   *Just want a free demo?* Change `plan: starter` to `plan: free` in `render.yaml` and delete the `disk:` block. Everything works, but the database is wiped on every restart.
+4. Render asks for the secret values. Fill in what you have; leave the rest empty:
+   `GEMINI_API_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `CRASHLAB_ADMIN_EMAILS` (your Google email), `ANTHROPIC_API_KEY`, `CRASHLAB_CONTACT_EMAIL`.
+5. Click **Apply**. The first build takes a few minutes.
+6. **Create the admin:** open the service's **Logs** tab and find the line `FIRST RUN: create your admin account here`. Open that link. (Or simply sign in with Google using the email you put in `CRASHLAB_ADMIN_EMAILS`.)
+7. For Google sign-in, add `https://YOUR-SITE.onrender.com/auth/google/callback` to the redirect URIs (section O, step 4).
+
+Every `git push` to GitHub redeploys automatically.
+
+---
+
+## Q. Re-record the demo video or the share image
+
+The landing page's video and the link-preview image are generated from the real app, so they can be refreshed after changes:
+
+```powershell
+pip install playwright
+```
+
+```powershell
+python -m playwright install chromium
+```
+
+```powershell
+python scripts/record_demo.py
+```
+
+```powershell
+python scripts/make_og.py
+```
+
+`record_demo.py` starts its own server on a throwaway database, signs up a demo user, runs an experiment, and saves `web/media/demo.webm` (about 2 minutes) plus a poster image.
 
 ---
 

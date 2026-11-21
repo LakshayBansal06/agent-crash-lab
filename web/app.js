@@ -1074,7 +1074,7 @@
     const ag = await api("/agents");
     page.innerHTML = `<h1>New experiment</h1><p class="lede">Choose the agents, the scenarios and how many times to repeat each one. Repeats with fixed seeds make results comparable across versions.</p>
       <form class="form section" id="exp-form">
-        <div class="field"><span class="label">Agents</span><div class="agent-choices">${ag.map((a) => `<label><input type="checkbox" name="agent" value="${esc(a.ref)}" ${a.ref === "v1" || a.ref === "v2" ? "checked" : ""} ${a.available === false ? "disabled" : ""}><span><b>${esc(a.name)} ${esc(a.version)}</b><br><span class="sub">${esc(a.framework)}${a.available === false ? " · set ANTHROPIC_API_KEY to enable" : ""}</span></span></label>`).join("")}</div></div>
+        <div class="field"><span class="label">Agents</span><div class="agent-choices">${ag.map((a) => `<label><input type="checkbox" name="agent" value="${esc(a.ref)}" ${a.ref === "v1" || a.ref === "v2" ? "checked" : ""} ${a.available === false ? "disabled" : ""}><span><b>${esc(a.name)} ${esc(a.version)}</b><br><span class="sub">${esc(a.framework)}${a.available === false ? ` · set ${a.ref === "gemini" ? "GEMINI_API_KEY" : "ANTHROPIC_API_KEY"} to enable` : ""}</span></span></label>`).join("")}</div></div>
         <div class="field"><span class="label">Scenarios</span><div class="checks-grid">${S.scenarios.map((s) => `<label><input type="checkbox" name="sc" value="${esc(s.scenario_id)}" checked><span>${s.scenario_id.slice(-4)} · ${esc(s.title)}</span></label>`).join("")}</div></div>
         <div class="field"><label for="repeats">Repeats per scenario</label><input id="repeats" type="number" min="1" max="50" value="5" style="width:100px"><div class="hint">pass^k is reported for every k up to this number.</div></div>
         <div class="field"><label for="seed">Base seed</label><input id="seed" type="number" value="2026" style="width:140px"></div>
@@ -1202,10 +1202,12 @@ POST /api/v1/failures/{id}/minimize    delta-debug a failure
 POST /api/v1/failures/{id}/regression  save a regression test
 POST /api/v1/regression-suites/default/run
 POST /api/v1/ingest/runs          upload SDK episodes</pre></div>
-        <div class="panel panel-pad"><h2>LLM agents</h2><p class="sub" style="margin:4px 0 10px">A built-in tool-calling agent runs any Claude model through the same harness.</p>
-<pre class="code">export ANTHROPIC_API_KEY=…
-export CRASHLAB_MODEL=claude-sonnet-5-5
-crashlab run --agents v2 llm --repeats 3</pre>
+        <div class="panel panel-pad"><h2>LLM agents</h2><p class="sub" style="margin:4px 0 10px">Built-in tool-calling agents run Claude or Gemini models through the same harness. Set the key on the server, never in the browser.</p>
+<pre class="code">export ANTHROPIC_API_KEY=…      # Claude
+crashlab run --agents v2 llm --repeats 3
+
+export GEMINI_API_KEY=…         # Gemini (GEMINI_MODEL to pick a model)
+crashlab run --agents v2 gemini --repeats 3</pre>
 <p class="sub" style="margin-top:10px">Planned adapters: OpenAI Agents SDK, LangGraph, CrewAI and a generic HTTP agent, all emitting the same event schema.</p></div>
       </section>`;
   };

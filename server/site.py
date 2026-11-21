@@ -66,7 +66,8 @@ FAQ: list[tuple[str, str]] = [
      "Yes, as long as your agent can call Python functions. The SDK wraps any agent function, and a built-in "
      "tool-calling agent can test Claude models directly. Adapters for specific frameworks are on the roadmap."),
     ("Do I need an LLM API key?",
-     "No. The built-in reference agents run offline and free. A key is only needed to test a real model."),
+     "No. The built-in reference agents run offline and free. A Claude or Gemini key is only needed to test a real model, "
+     "and it stays on the server."),
     ("Is my data sent anywhere?",
      "No. Everything runs on your own machine or server. The public website uses Google Analytics only if you accept "
      "cookies, and contact-form messages are stored on this server only."),
@@ -74,7 +75,9 @@ FAQ: list[tuple[str, str]] = [
      "Yes. Every fault, agent choice and timestamp is driven by a seed, so the same seed replays the identical trace. "
      "Reliability is reported over repeated trials with confidence intervals and pass^k."),
     ("What does it cost?",
-     "The software is free to run yourself. Testing a real model costs only what your model provider charges."),
+     "Free to start, and free to run on your own machine. Hosted plans are Pro at ₹2,499 and Team at ₹9,999 a month "
+     "once billing opens; during the beta every account gets every feature. Testing a real model (Claude or Gemini) "
+     "also costs whatever your model provider charges."),
 ]
 
 
@@ -237,9 +240,9 @@ PLANS = [
     {"name": "Free", "price": "₹0", "per": "forever", "for": "Individual developers",
      "cta": ("Create free account", "/signup", True)},
     {"name": "Pro", "price": "₹2,499", "per": "per month", "for": "Small AI teams",
-     "cta": ("Start free, upgrade later", "/signup", False)},
+     "cta": ("Start free", "/signup", False)},
     {"name": "Team", "price": "₹9,999", "per": "per month", "for": "Agencies and growing startups",
-     "cta": ("Start free, upgrade later", "/signup", False)},
+     "cta": ("Start free", "/signup", False)},
     {"name": "Enterprise", "price": "Custom", "per": "annual contract", "for": "Private deployments",
      "cta": ("Talk to us", "/contact", False)},
 ]
@@ -248,8 +251,8 @@ PLAN_ROWS: list[tuple[str, tuple[str, str, str, str]]] = [
     ("Projects", ("One", "More projects", "More projects", "Private deployment")),
     ("Monthly episodes", ("Limited", "Larger quota", "Higher limits", "Dedicated infrastructure")),
     ("Environments and evaluations", ("Basic", "Basic", "Basic + shared datasets", "Custom environments")),
-    ("Fault injection, minimization, regression tests", ("—", "Included", "Included", "Included")),
-    ("CI integration and advanced reports", ("—", "Included", "Included", "Included")),
+    ("Fault injection, minimization, regression tests", ("Included in beta", "Included", "Included", "Included")),
+    ("CI integration and advanced reports", ("Included in beta", "Included", "Included", "Included")),
     ("Team collaboration and webhooks", ("—", "—", "Included", "Included")),
     ("SSO, audit controls, retention policies", ("—", "—", "—", "Included")),
     ("Support", ("Community", "Community", "Priority", "Contractual")),
@@ -265,11 +268,10 @@ def demo_section() -> str:
     poster = ' poster="/static/media/demo-poster.png"' if (WEB_DIR / "media" / "demo-poster.png").exists() else ""
     return f"""
 <section class="site-section ledger" id="demo" aria-labelledby="demo-title">
-  <div class="margin"><span class="exhibit">Exhibit A</span></div>
   <div>
     <h2 id="demo-title">Watch the whole investigation</h2>
     <p class="sub">Recorded from the real app, start to finish: create an account, run 200 crash tests, open a failure, shrink it to two steps, save the regression test, and sign in to the admin console.</p>
-    <figure class="video-frame"><video controls preload="metadata" playsinline{poster} aria-describedby="demo-title">
+    <figure class="video-frame"><figcaption class="exhibit-tag">Exhibit A · recorded from the real app</figcaption><video controls preload="metadata" playsinline{poster} aria-describedby="demo-title">
       <source src="/static/media/demo.webm" type="video/webm">
       <a href="/static/media/demo.webm">Download the demo video</a></video></figure>
     <div class="btn-row after-video"><a class="btn primary lg" href="/signup">Create free account and try it</a></div>
@@ -291,7 +293,7 @@ def landing_body() -> str:
                     f'<figcaption><b>{e(t["name"])}</b> · {e(t["role"])}{link}</figcaption></figure>')
 
         cards = "".join(card(t) for t in quotes)
-        testimonials = (f'<section class="site-section ledger" id="testimonials"><div class="margin"><span class="exhibit">Statements</span></div>'
+        testimonials = (f'<section class="site-section ledger" id="testimonials">'
                         f'<div><h2>What developers say</h2><div class="quotes">{cards}</div></div></section>')
     steps = [("Stress", "Your agent works inside a simulated business while faults fire: gateway timeouts, rate limits, stale reads, prompt injection, concurrent writes.", "Seeded, replayable episodes"),
              ("Detect", "Six evaluators read the real system state, policies, security and the agent's own claims. A polite reply can't hide a double refund.", "Pass / fail with evidence"),
@@ -308,6 +310,13 @@ def landing_body() -> str:
                    for label, vals in PLAN_ROWS)
     ctas = "".join(f'<td><a class="btn{" primary" if primary else ""}" href="{href}">{e(text)}</a></td>'
                    for text, href, primary in (p["cta"] for p in PLANS))
+    # Phones get one plan per block; the comparison table is for wider screens.
+    stacked = "".join(
+        f'<article class="plan"><header><h3>{e(p["name"])}</h3><span class="for">{e(p["for"])}</span></header>'
+        f'<p class="plan-price"><span class="price">{e(p["price"])}</span> <span class="per">{e(p["per"])}</span></p>'
+        '<dl>' + "".join(f'<div><dt>{e(label)}</dt><dd>{e(vals[i])}</dd></div>' for label, vals in PLAN_ROWS) + '</dl>'
+        f'<a class="btn{" primary" if p["cta"][2] else ""} block" href="{p["cta"][1]}">{e(p["cta"][0])}</a></article>'
+        for i, p in enumerate(PLANS))
     jsonld = json.dumps({"@context": "https://schema.org", "@graph": [
         {"@type": "SoftwareApplication", "name": "AGENT CRASH LAB", "applicationCategory": "DeveloperApplication",
          "operatingSystem": "Web, Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"},
@@ -316,7 +325,7 @@ def landing_body() -> str:
                                             for q, a in FAQ]}]}).replace("</", "<\\/")
     return f"""
 <section class="docket" aria-labelledby="hero-title">
-  <div class="docket-strip"><span>Docket <b>ACL-ECOM-0002</b></span><span>Investigation report</span><span>Agent support-agent 1.0.0</span><span class="closed">Closed · regression saved</span></div>
+  <div class="docket-strip"><span>Docket <b class="id">ACL-ECOM-0002</b></span><span>Investigation report</span><span>Agent <b class="id">support-agent 1.0.0</b></span><span class="closed">Closed · regression saved</span></div>
   <div class="docket-grid">
     <div class="docket-main">
       <h1 id="hero-title">Your AI agent passed the demo. Will it survive production?</h1>
@@ -339,7 +348,7 @@ def landing_body() -> str:
 </section>
 {demo_section()}
 <section class="site-section ledger" id="how" aria-labelledby="how-title">
-  <div class="margin"><span class="exhibit">Procedure</span></div>
+  
   <div>
     <h2 id="how-title">How every investigation runs</h2>
     <p class="sub">One loop, from a stressed agent to a protected release. Each stage leaves evidence you can open.</p>
@@ -350,7 +359,7 @@ crashlab demo</code></pre></div>
   </div>
 </section>
 <section class="site-section ledger" id="results" aria-labelledby="results-title">
-  <div class="margin"><span class="exhibit">Findings</span></div>
+  
   <div>
     <h2 id="results-title">Measured, not claimed</h2>
     <p class="sub">The included benchmark, measured <time datetime="{PAGE_UPDATED['/']}">{human_date(PAGE_UPDATED['/'])}</time>: {r['episodes']} episodes, 20 scenarios × 5 repeats × 2 versions of a refund agent. Anyone can reproduce it with <code>crashlab run</code>.</p>
@@ -370,18 +379,19 @@ crashlab demo</code></pre></div>
 </section>
 {testimonials}
 <section class="site-section ledger" id="pricing" aria-labelledby="pricing-title">
-  <div class="margin"><span class="exhibit">Schedule of fees</span></div>
+  
   <div>
     <h2 id="pricing-title">Pricing</h2>
-    <p class="sub">Start free. During the beta every account gets every feature, with nothing to pay and no card to enter; paid plans start when billing opens. Prices in Indian rupees per month, excluding GST.</p>
-    <div class="table-wrap"><table class="table fees">
+    <p class="sub">Start free. During the beta every account gets the Pro features, with nothing to pay and no card to enter; paid plans start when billing opens. Prices in Indian rupees per month, excluding GST.</p>
+    <div class="table-wrap fees-wrap"><table class="table fees">
       <thead><tr><th scope="col"><span class="sr-only">Feature</span></th>{heads}</tr></thead>
       <tbody><tr class="price-row"><th scope="row">Price</th>{prices}</tr>{rows}<tr class="cta-row"><th scope="row"><span class="sr-only">Get started</span></th>{ctas}</tr></tbody>
     </table></div>
+    <div class="plans-stacked">{stacked}</div>
   </div>
 </section>
 <section class="site-section ledger" id="faq" aria-labelledby="faq-title">
-  <div class="margin"><span class="exhibit">Questions</span></div>
+  
   <div>
     <h2 id="faq-title">Frequently asked questions</h2>
     <div class="faq">{faq}</div>
