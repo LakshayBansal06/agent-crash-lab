@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Autonomous testing, debugging and reliability platform for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 dependencies = ["jsonschema>=4.20"]
 
 [project.optional-dependencies]
@@ -18,8 +18,8 @@ dev = ["pytest>=8", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
 [project.scripts]
 crashlab = "crashlab.cli:main"
 
-[tool.setuptools]
-packages = ["crashlab", "crashlab.agents", "crashlab.environments", "server"]
+[tool.setuptools.packages.find]
+include = ["crashlab*", "server*"]
 
 [tool.setuptools.package-data]
 crashlab = ["data/scenarios/*.json", "data/schemas/*.json"]

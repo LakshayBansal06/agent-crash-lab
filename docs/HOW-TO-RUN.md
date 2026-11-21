@@ -5,6 +5,23 @@ Every command goes into **PowerShell**, one line at a time. Press **Enter** afte
 
 ---
 
+## ⚡ The easiest way: double-click `run.bat`
+
+Once Python is installed (section B, step 1), you don't need any of the other steps.
+**Double-click `run.bat`** in the project folder. It automatically:
+
+1. finds Python,
+2. creates the `.venv` environment the first time,
+3. installs the libraries (only the first time, or when they change),
+4. starts the server and opens the dashboard in your browser.
+
+To stop it, press **Ctrl + C** in its window, or just close the window.
+To use another port, open a terminal in the folder and type `run 8001`.
+
+The rest of this guide explains what `run.bat` does for you, step by step, and how to do more (tests, real AI models, Docker).
+
+---
+
 ## A. What this project is, in one minute
 
 | Part | What it is | Where |

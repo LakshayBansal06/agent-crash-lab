@@ -18,7 +18,7 @@ This repository is the working vertical slice from the blueprint: **one environm
 
 ---
 
-> **New to Python?** Follow the step-by-step Windows guide: [`docs/HOW-TO-RUN.md`](docs/HOW-TO-RUN.md).
+> **On Windows?** Double-click `run.bat`: it installs everything and opens the dashboard. New to Python? See the step-by-step guide: [`docs/HOW-TO-RUN.md`](docs/HOW-TO-RUN.md).
 
 ## Quick start (60 seconds)
 
