@@ -45,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from crashlab import __version__
-from crashlab.agents import LLM_REFS, REGISTRY
+from crashlab.agents import LLM_REFS, REGISTRY, missing_key
 from crashlab.diagnosis import Failure
 from crashlab.environments import make_environment
 from crashlab.experiment import run_experiment, run_regressions
@@ -373,6 +373,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
         for a in body.agents:
             if a not in REGISTRY and a not in LLM_REFS:
                 raise HTTPException(422, f"unknown agent {a!r}")
+            if key := missing_key(a):
+                raise HTTPException(422, f"agent {a!r} needs {key} set on the server")
         if sum(1 for j in jobs.values() if not j.done) >= max_jobs:
             raise HTTPException(429, "too many experiments running; try again shortly", headers={"Retry-After": "10"})
         sc = load_scenarios()
@@ -549,6 +551,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
         for a in body.agents:
             if a not in REGISTRY and a not in LLM_REFS:
                 raise HTTPException(422, f"unknown agent {a!r}")
+            if key := missing_key(a):
+                raise HTTPException(422, f"agent {a!r} needs {key} set on the server")
         res = run_regressions(regs, body.agents, repeats=body.repeats)
         res["id"] = store.save_regression_run(res, p.project_id)
         return res

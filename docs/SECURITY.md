@@ -22,9 +22,9 @@ This file tracks the common ways a quickly-built ("vibe-coded") app fails, and w
 | 16 | No logs | ✅ | JSON logs to stdout with request id, route, status, latency and key id. Auth headers are never logged. | `test_logs_are_structured_and_never_contain_keys` |
 | 17 | No monitoring | ✅ | `/health` (liveness), `/ready` (readiness, no internals) and `/metrics` (Prometheus, admin-only). Example alert rules are in `docs/alerts.yml`. | `test_metrics_endpoint`, `test_readiness_reveals_no_internals` |
 | 18 | No backup or rollback | ✅ | `crashlab backup create` uses SQLite's online backup API plus an integrity check. `restore` refuses corrupt files and keeps the previous database for rollback. | `test_backup_restore_roundtrip`, `test_restore_refuses_corrupt_backup` |
-| 19 | No tests | ✅ | 128 tests (engine, evaluators, minimizer, SDK, CLI, API, security, website, real-browser checks), run in CI on every PR. | `pytest` |
+| 19 | No tests | ✅ | 129 tests (engine, evaluators, minimizer, SDK, CLI, API, security, website, real-browser checks), run in CI on every PR. | `pytest` |
 | 20 | Copy-paste, no structure | ✅ | One module per blueprint component, with no duplicated logic between CLI, API and SDK (all call the same engine). Ruff lints style, bugs and security rules in CI. | CI `ruff` step |
-| 21 | "Prompt fix = new bug" | ✅ | Nothing merges unless all 128 tests, lint, the dataset validation and the agent release gate pass. A fix that breaks something else fails CI before it ships. | CI |
+| 21 | "Prompt fix = new bug" | ✅ | Nothing merges unless all 129 tests, lint, the dataset validation and the agent release gate pass. A fix that breaks something else fails CI before it ships. | CI |
 | 22 | Can't debug your own code | ⚠️ partly | The tooling helps: request ids tie API errors to log lines, and the trace explorer replays any episode step by step. The real fix is human: read the code until you can explain every module. Start with `docs/ARCHITECTURE.md`, then `runner.py` → `evaluators.py` → `diagnosis.py`. | — |
 
 ## Not done yet (deliberately out of scope for a single-node slice)

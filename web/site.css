@@ -103,7 +103,7 @@ main#main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 
 .procedure { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--ink); counter-reset: st; }
 .procedure li { counter-increment: st; display: grid; grid-template-columns: 54px 160px minmax(0, 1fr) 210px; gap: 16px; align-items: baseline;
   padding: 18px 0; border-bottom: 1px solid var(--line); transition: background-color .2s; }
-.procedure li::before { content: counter(st, decimal-leading-zero); font: 500 12.5px var(--mono); color: var(--muted); }
+.procedure li::before { content: counter(st, decimal-leading-zero); font: 600 13px var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
 .procedure li:hover { background: color-mix(in srgb, var(--raised) 55%, transparent); }
 .procedure b { font-family: var(--display); font-stretch: 78%; font-size: 24px; font-weight: 800; line-height: 1; }
 .procedure span { color: var(--ink-2); }

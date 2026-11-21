@@ -31,7 +31,7 @@ The fault-to-regression loop: Stress → Detect → Explain → Minimize → Pre
 ## Brand Commitments
 - Name: AGENT CRASH LAB (all caps in the wordmark).
 - Tagline in use: "Find failures before your customers do." Headline in use: "Your AI agent passed the demo. Will it survive production?"
-- Existing mark: the yellow/black crash-test calibration target (`web/favicon.svg`).
+- Mark: the crash-test calibration target, drawn in ink (navy on paper, paper on navy) since the docket redesign; red stays reserved for findings (`web/favicon.svg`).
 
 ## Evidence on Hand
 - Real, reproducible benchmark (seeded): 200 episodes; reference agent v1 passes 19%, v2 passes 99%; duplicate side effects 15% → 0%; attack success 75% → 0%; 13 failure modes; a failing trace minimized from 8 steps to 2. `tests/test_site.py` re-runs it so published numbers cannot drift.

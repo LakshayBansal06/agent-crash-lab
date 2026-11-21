@@ -330,7 +330,7 @@ Red 2.5px outlined caps in condensed Archivo, rotated -6deg, with a small tracke
 A red-tinted block (5% red over fresh sheet, 50% red border, square) with a caps "Probable cause" heading in red ink and the finding in 15px ink.
 
 ### Exhibit Frame
-Raw evidence on navy in both themes. The video frame's figcaption is the Exhibit tag ("Exhibit A · recorded from the real app"): 12.5px navy-2-on-navy text above the video, divided by a navy hairline.
+Raw evidence on navy in both themes. The video frame's figcaption is the Exhibit tag ("Exhibit A · recorded from the real app"): 12.5px evening-ink-2 text on navy above the video, divided by a navy hairline.
 
 ### Measurement Bars
 Horizontal bars, 22px tall, value in mono. The failing v1 is drawn in the red hazard hatch with a red inset outline and red-ink value; the fixed v2 in solid ink. Bars grow from the left (900 ms) once.

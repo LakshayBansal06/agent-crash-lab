@@ -14,7 +14,7 @@ Each failure comes back as:
 
 > Stress → Detect → Explain → Minimize → Prevent → Compare
 
-This repository is the working vertical slice from the blueprint: **one environment, two agent versions, a fault engine, the full failure-to-regression loop**, plus an SDK, CLI, REST API with live streaming, and a dashboard. It is all tested (128 tests, including security, website and real-browser suites) and runs with no external services.
+This repository is the working vertical slice from the blueprint: **one environment, two agent versions, a fault engine, the full failure-to-regression loop**, plus an SDK, CLI, REST API with live streaming, and a dashboard. It is all tested (129 tests, including security, website and real-browser suites) and runs with no external services.
 
 ---
 
@@ -217,7 +217,7 @@ The root-cause engine reports evidence-linked hypotheses with a confidence level
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                 # 128 tests: engine, evaluators, ddmin, SDK, CLI, API, security, website, browser
+pytest -q                 # 129 tests: engine, evaluators, ddmin, SDK, CLI, API, security, website, browser
                           # (browser tests need: pip install playwright && playwright install chromium)
 ruff check crashlab server tests
 ```

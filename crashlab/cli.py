@@ -63,6 +63,12 @@ def cmd_run(args) -> int:
     if not scenarios:
         print("no scenarios selected", file=sys.stderr)
         return 2
+    from .agents import missing_key
+
+    for ref in args.agents:
+        if key := missing_key(ref):
+            print(c(f"agent '{ref}' needs {key}. Set it first, e.g. in PowerShell:  $env:{key} = \"your-key\"", RED), file=sys.stderr)
+            return 2
 
     total = len(args.agents) * len(scenarios) * args.repeats
 

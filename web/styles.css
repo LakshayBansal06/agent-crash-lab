@@ -461,7 +461,7 @@ dialog.ui-dialog[open] { animation: pop .18s var(--ease); }
 .ui-dialog .dlg-body h2 { font-size: 18px; }
 .ui-dialog .dlg-body p { color: var(--ink-2); margin: 8px 0 0; }
 .ui-dialog .dlg-actions { display: flex; gap: 10px; justify-content: flex-end; padding: 16px 22px 20px; flex-wrap: wrap; }
-.btn.danger { background: var(--fail); border-color: var(--fail); color: #fff; }
+.btn.danger { background: var(--fail); border-color: var(--fail); color: var(--on-signal); }
 .btn.danger:hover { filter: brightness(1.08); background: var(--fail); }
 dialog.search-dialog { width: min(640px, calc(100vw - 24px)); margin-top: 10vh; }
 .search-dialog .search-field { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }

@@ -61,6 +61,12 @@ def test_llm_agent_loop_with_fake_transport():
     assert any(t["name"] == "issue_refund" for t in sent[0]["tools"])
 
 
+def test_model_agents_refuse_to_run_without_a_key(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert main(["--db", str(tmp_path / "k.db"), "run", "--agents", "gemini", "--repeats", "1", "--quiet"]) == 2
+    assert "needs GEMINI_API_KEY" in capsys.readouterr().err
+
+
 def test_gemini_agent_loop_with_fake_transport():
     sig = {"thoughtSignature": "opaque"}
     script = iter([

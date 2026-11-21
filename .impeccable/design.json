@@ -1,0 +1,966 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-21T17:18:32+00:00",
+  "title": "Design System: AGENT CRASH LAB",
+  "extensions": {
+    "colorMeta": {
+      "report-paper": {
+        "role": "neutral",
+        "displayName": "Report Paper",
+        "purpose": "Page background, light scene.",
+        "canonical": "#f1f4f6",
+        "oklch": "oklch(96.5% 0.004 236.5)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#242526",
+          "#414243",
+          "#5f6163",
+          "#808384",
+          "#a3a5a6",
+          "#c8c9ca",
+          "#eeeeef"
+        ]
+      },
+      "fresh-sheet": {
+        "role": "neutral",
+        "displayName": "Fresh Sheet",
+        "purpose": "Rail, panels, inputs, tables, dialogs.",
+        "canonical": "#fbfcfd",
+        "oklch": "oklch(99.1% 0.002 247.8)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#414242",
+          "#606162",
+          "#828283",
+          "#a4a5a6",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      },
+      "desk-grey": {
+        "role": "neutral",
+        "displayName": "Desk Grey",
+        "purpose": "Secondary buttons, hovered rows, chips.",
+        "canonical": "#e6ebef",
+        "oklch": "oklch(93.7% 0.008 241.7)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242526",
+          "#404244",
+          "#5e6265",
+          "#7f8386",
+          "#a2a5a8",
+          "#c7c9cb",
+          "#eeeeef"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "purpose": "Hairlines and borders.",
+        "canonical": "#c3ccd4",
+        "oklch": "oklch(84.1% 0.015 244.7)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232528",
+          "#3e4347",
+          "#5b6268",
+          "#7c838a",
+          "#a0a6aa",
+          "#c6c9cc",
+          "#edeff0"
+        ]
+      },
+      "rule-soft": {
+        "role": "neutral",
+        "displayName": "Soft Rule",
+        "purpose": "Row dividers.",
+        "canonical": "#dbe1e6",
+        "oklch": "oklch(90.7% 0.009 242.8)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#3f4245",
+          "#5d6266",
+          "#7e8387",
+          "#a2a5a8",
+          "#c7c9cb",
+          "#eeeeef"
+        ]
+      },
+      "rule-strong": {
+        "role": "neutral",
+        "displayName": "Strong Rule",
+        "purpose": "Input borders, hover borders.",
+        "canonical": "#8d9aa6",
+        "oklch": "oklch(68.0% 0.023 246.0)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222629",
+          "#3c4349",
+          "#58636c",
+          "#79848e",
+          "#9ea6ae",
+          "#c5cace",
+          "#edeff1"
+        ]
+      },
+      "docket-navy": {
+        "role": "primary",
+        "displayName": "Docket Navy",
+        "purpose": "Ink: text, primary actions, top-rules, exhibits.",
+        "canonical": "#0d1b2a",
+        "oklch": "oklch(21.8% 0.036 251.3)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#21262b",
+          "#3a434e",
+          "#546373",
+          "#758495",
+          "#9ba6b3",
+          "#c3cad2",
+          "#eceff2"
+        ]
+      },
+      "navy-2": {
+        "role": "neutral",
+        "displayName": "Navy 2",
+        "purpose": "Secondary text, ledes.",
+        "canonical": "#33475b",
+        "oklch": "oklch(39.0% 0.042 249.0)",
+        "tonalRamp": [
+          "#090b0e",
+          "#1f262c",
+          "#374350",
+          "#516376",
+          "#728598",
+          "#99a7b5",
+          "#c2cad3",
+          "#ebeff3"
+        ]
+      },
+      "slate": {
+        "role": "neutral",
+        "displayName": "Slate",
+        "purpose": "Docket metadata, captions, T+ times.",
+        "canonical": "#56677a",
+        "oklch": "oklch(50.7% 0.037 251.4)",
+        "tonalRamp": [
+          "#090b0d",
+          "#20262c",
+          "#39434e",
+          "#546373",
+          "#758495",
+          "#9ba6b3",
+          "#c3cad2",
+          "#eceff2"
+        ]
+      },
+      "finding-red": {
+        "role": "primary",
+        "displayName": "Finding Red",
+        "purpose": "Faults, failures, probable cause, stamps only.",
+        "canonical": "#c8102e",
+        "oklch": "oklch(53.0% 0.207 22.3)",
+        "tonalRamp": [
+          "#160606",
+          "#431213",
+          "#781920",
+          "#b11d2d",
+          "#d9484e",
+          "#eb8280",
+          "#f7b6b3",
+          "#ffe7e5"
+        ]
+      },
+      "finding-red-ink": {
+        "role": "primary",
+        "displayName": "Finding Red Ink",
+        "purpose": "Red text at small sizes.",
+        "canonical": "#b00e28",
+        "oklch": "oklch(48.3% 0.188 22.2)",
+        "tonalRamp": [
+          "#150606",
+          "#401515",
+          "#732024",
+          "#ab2a33",
+          "#d35153",
+          "#e58684",
+          "#f3b8b5",
+          "#ffe8e6"
+        ]
+      },
+      "fail-ink": {
+        "role": "primary",
+        "displayName": "Fail Ink",
+        "purpose": "Failing values in code and diffs.",
+        "canonical": "#a50d25",
+        "oklch": "oklch(46.1% 0.179 22.2)",
+        "tonalRamp": [
+          "#150706",
+          "#3f1616",
+          "#712326",
+          "#a82f36",
+          "#cf5456",
+          "#e28885",
+          "#f1b9b6",
+          "#ffe8e6"
+        ]
+      },
+      "pass-green": {
+        "role": "secondary",
+        "displayName": "Pass Green",
+        "purpose": "Passing episodes and status.",
+        "canonical": "#1d6f4b",
+        "oklch": "oklch(48.4% 0.097 159.9)",
+        "tonalRamp": [
+          "#060d09",
+          "#152a1f",
+          "#224c37",
+          "#2e7050",
+          "#519271",
+          "#85b198",
+          "#b6d1c1",
+          "#e7f2eb"
+        ]
+      },
+      "pass-ink": {
+        "role": "secondary",
+        "displayName": "Pass Ink",
+        "purpose": "Pass text, Closed status.",
+        "canonical": "#17603f",
+        "oklch": "oklch(43.6% 0.089 159.0)",
+        "tonalRamp": [
+          "#070d09",
+          "#172a1f",
+          "#264b37",
+          "#356f51",
+          "#579171",
+          "#88b099",
+          "#b8d0c2",
+          "#e7f1eb"
+        ]
+      },
+      "warn-amber": {
+        "role": "secondary",
+        "displayName": "Warn Amber",
+        "purpose": "High severity, flaky status.",
+        "canonical": "#9a5b00",
+        "oklch": "oklch(53.1% 0.119 65.1)",
+        "tonalRamp": [
+          "#100a04",
+          "#33200c",
+          "#5c3910",
+          "#895310",
+          "#ad7438",
+          "#c69c74",
+          "#dec4ac",
+          "#f7ece2"
+        ]
+      },
+      "focus-blue": {
+        "role": "secondary",
+        "displayName": "Focus Blue",
+        "purpose": "Focus rings, selection.",
+        "canonical": "#1f5f8b",
+        "oklch": "oklch(46.7% 0.096 243.1)",
+        "tonalRamp": [
+          "#060c11",
+          "#152735",
+          "#24455f",
+          "#32668d",
+          "#5488b1",
+          "#85aac8",
+          "#b6ccdf",
+          "#e7f0f8"
+        ]
+      },
+      "series-v1": {
+        "role": "tertiary",
+        "displayName": "Series v1 Rust",
+        "purpose": "Dashboard chart: baseline agent.",
+        "canonical": "#8a3b12",
+        "oklch": "oklch(45.3% 0.119 44.1)",
+        "tonalRamp": [
+          "#120906",
+          "#371e13",
+          "#62341f",
+          "#914b2c",
+          "#b66d4d",
+          "#cd977f",
+          "#e3c1b3",
+          "#faebe5"
+        ]
+      },
+      "series-v2": {
+        "role": "tertiary",
+        "displayName": "Series v2 Docket Blue",
+        "purpose": "Dashboard chart: candidate agent.",
+        "canonical": "#1f5f8b",
+        "oklch": "oklch(46.7% 0.096 243.1)",
+        "tonalRamp": [
+          "#060c11",
+          "#152735",
+          "#24455f",
+          "#32668d",
+          "#5488b1",
+          "#85aac8",
+          "#b6ccdf",
+          "#e7f0f8"
+        ]
+      },
+      "exhibit-ink": {
+        "role": "neutral",
+        "displayName": "Exhibit Ink",
+        "purpose": "Text on navy exhibits.",
+        "canonical": "#d6dee6",
+        "oklch": "oklch(89.7% 0.014 248.0)",
+        "tonalRamp": [
+          "#0a0b0c",
+          "#232527",
+          "#3e4246",
+          "#5c6268",
+          "#7d8389",
+          "#a1a6aa",
+          "#c7c9cc",
+          "#edeef0"
+        ]
+      },
+      "evening-paper": {
+        "role": "neutral",
+        "displayName": "Evening Paper",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#0b1622",
+        "oklch": "oklch(19.6% 0.029 251.5)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#21252a",
+          "#3b434c",
+          "#576370",
+          "#788492",
+          "#9da6b0",
+          "#c4cad0",
+          "#eceff1"
+        ]
+      },
+      "evening-sheet": {
+        "role": "neutral",
+        "displayName": "Evening Sheet",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#0f1d2c",
+        "oklch": "oklch(22.6% 0.035 251.2)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#21262b",
+          "#3a434e",
+          "#556373",
+          "#758495",
+          "#9ba6b3",
+          "#c3cad1",
+          "#eceff2"
+        ]
+      },
+      "evening-raised": {
+        "role": "neutral",
+        "displayName": "Evening Raised",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#162839",
+        "oklch": "oklch(27.0% 0.040 248.2)",
+        "tonalRamp": [
+          "#090b0e",
+          "#20262c",
+          "#38434f",
+          "#526374",
+          "#728597",
+          "#99a7b4",
+          "#c2cad2",
+          "#ebeff2"
+        ]
+      },
+      "evening-rule": {
+        "role": "neutral",
+        "displayName": "Evening Rule",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#2a3e52",
+        "oklch": "oklch(35.6% 0.043 249.1)",
+        "tonalRamp": [
+          "#090b0e",
+          "#1f262d",
+          "#374350",
+          "#516376",
+          "#718599",
+          "#99a7b6",
+          "#c2cad3",
+          "#ebeff3"
+        ]
+      },
+      "evening-rule-soft": {
+        "role": "neutral",
+        "displayName": "Evening Rule Soft",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#1d3043",
+        "oklch": "oklch(30.2% 0.043 249.4)",
+        "tonalRamp": [
+          "#090b0e",
+          "#1f262c",
+          "#374350",
+          "#516376",
+          "#728598",
+          "#99a7b5",
+          "#c2cad3",
+          "#ebeff3"
+        ]
+      },
+      "evening-rule-strong": {
+        "role": "neutral",
+        "displayName": "Evening Rule Strong",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#4b627a",
+        "oklch": "oklch(48.7% 0.048 249.9)",
+        "tonalRamp": [
+          "#090b0e",
+          "#1f262d",
+          "#364351",
+          "#4f6378",
+          "#70859b",
+          "#98a7b7",
+          "#c1cad4",
+          "#ebeff3"
+        ]
+      },
+      "evening-ink": {
+        "role": "neutral",
+        "displayName": "Evening Ink",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#e8eef3",
+        "oklch": "oklch(94.6% 0.009 242.8)",
+        "tonalRamp": [
+          "#0b0b0c",
+          "#242527",
+          "#3f4245",
+          "#5d6266",
+          "#7e8387",
+          "#a2a5a8",
+          "#c7c9cb",
+          "#eeeeef"
+        ]
+      },
+      "evening-ink-2": {
+        "role": "neutral",
+        "displayName": "Evening Ink 2",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#b4c2cf",
+        "oklch": "oklch(80.7% 0.024 246.1)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#222629",
+          "#3c434a",
+          "#58636d",
+          "#78848e",
+          "#9ea6ae",
+          "#c5cacf",
+          "#eceff1"
+        ]
+      },
+      "evening-slate": {
+        "role": "neutral",
+        "displayName": "Evening Slate",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#8597a9",
+        "oklch": "oklch(66.8% 0.034 248.3)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#20262b",
+          "#39434d",
+          "#546372",
+          "#758494",
+          "#9ba6b2",
+          "#c3cad1",
+          "#eceff2"
+        ]
+      },
+      "evening-finding-red": {
+        "role": "primary",
+        "displayName": "Evening Finding Red",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#ff4d5e",
+        "oklch": "oklch(67.6% 0.213 19.8)",
+        "tonalRamp": [
+          "#160606",
+          "#431115",
+          "#791623",
+          "#b31632",
+          "#db4552",
+          "#ec8183",
+          "#f8b5b4",
+          "#ffe7e6"
+        ]
+      },
+      "evening-finding-red-ink": {
+        "role": "primary",
+        "displayName": "Evening Finding Red Ink",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#ff7a86",
+        "oklch": "oklch(73.7% 0.162 16.3)",
+        "tonalRamp": [
+          "#140708",
+          "#3d171b",
+          "#6d272f",
+          "#a23644",
+          "#c85a64",
+          "#dd8b8f",
+          "#edbabc",
+          "#ffe8e9"
+        ]
+      },
+      "evening-fail-ink": {
+        "role": "primary",
+        "displayName": "Evening Fail Ink",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#ff9aa3",
+        "oklch": "oklch(79.2% 0.121 14.5)",
+        "tonalRamp": [
+          "#120809",
+          "#381c1e",
+          "#643035",
+          "#93454e",
+          "#b9666e",
+          "#d09296",
+          "#e5bec0",
+          "#fbeaeb"
+        ]
+      },
+      "evening-pass": {
+        "role": "secondary",
+        "displayName": "Evening Pass",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#4cc38a",
+        "oklch": "oklch(73.5% 0.136 159.3)",
+        "tonalRamp": [
+          "#040e08",
+          "#0a2c1c",
+          "#054f31",
+          "#007548",
+          "#319868",
+          "#75b692",
+          "#aed4be",
+          "#e4f3ea"
+        ]
+      },
+      "evening-pass-ink": {
+        "role": "secondary",
+        "displayName": "Evening Pass Ink",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#8fe0b5",
+        "oklch": "oklch(84.3% 0.100 160.0)",
+        "tonalRamp": [
+          "#060d09",
+          "#142b1f",
+          "#204c36",
+          "#2b7050",
+          "#4f9370",
+          "#83b298",
+          "#b6d1c1",
+          "#e6f2eb"
+        ]
+      },
+      "evening-warn": {
+        "role": "secondary",
+        "displayName": "Evening Warn",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#f0a940",
+        "oklch": "oklch(78.5% 0.143 73.0)",
+        "tonalRamp": [
+          "#110a03",
+          "#342003",
+          "#5e3900",
+          "#8b5300",
+          "#af7510",
+          "#c79c65",
+          "#dec5a4",
+          "#f8eddf"
+        ]
+      },
+      "evening-focus": {
+        "role": "secondary",
+        "displayName": "Evening Focus",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#6fb5e6",
+        "oklch": "oklch(74.6% 0.100 240.5)",
+        "tonalRamp": [
+          "#060c11",
+          "#142735",
+          "#204660",
+          "#2b678e",
+          "#4e89b2",
+          "#82abc9",
+          "#b5cddf",
+          "#e6f0f8"
+        ]
+      },
+      "evening-series-v1": {
+        "role": "tertiary",
+        "displayName": "Evening Series V1",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#f08a4b",
+        "oklch": "oklch(73.2% 0.146 50.4)",
+        "tonalRamp": [
+          "#130804",
+          "#391c0a",
+          "#67310b",
+          "#984704",
+          "#be6933",
+          "#d39471",
+          "#e7c0aa",
+          "#fbebe2"
+        ]
+      },
+      "evening-series-v2": {
+        "role": "tertiary",
+        "displayName": "Evening Series V2",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#6fb5e6",
+        "oklch": "oklch(74.6% 0.100 240.5)",
+        "tonalRamp": [
+          "#060c11",
+          "#142735",
+          "#204660",
+          "#2b678e",
+          "#4e89b2",
+          "#82abc9",
+          "#b5cddf",
+          "#e6f0f8"
+        ]
+      },
+      "evening-exhibit": {
+        "role": "neutral",
+        "displayName": "Evening Exhibit",
+        "purpose": "Evening docket (dark theme) step of the matching role.",
+        "canonical": "#07111b",
+        "oklch": "oklch(17.3% 0.026 248.8)",
+        "tonalRamp": [
+          "#0a0b0d",
+          "#22262a",
+          "#3c434a",
+          "#58636e",
+          "#788490",
+          "#9ea6af",
+          "#c5cacf",
+          "#eceff1"
+        ]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "White",
+        "purpose": "Text on danger fill.",
+        "canonical": "#ffffff",
+        "oklch": "oklch(100.0% 0.000 89.9)",
+        "tonalRamp": [
+          "#0b0b0b",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#a5a5a5",
+          "#c9c9c9",
+          "#eeeeee"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Landing H1 only; Archivo 800 at 72% width."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Public section headings at 76% width."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Dashboard H2s, dialog titles at 88% width."
+      },
+      "figure": {
+        "displayName": "Figure",
+        "purpose": "Prices, register counts, procedure verbs, plan names."
+      },
+      "stamp": {
+        "displayName": "Stamp",
+        "purpose": "The finding stamp only."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Public pages; tabular figures on."
+      },
+      "body-dense": {
+        "displayName": "Body (dense)",
+        "purpose": "Dashboard text and buttons."
+      },
+      "label": {
+        "displayName": "Record Label",
+        "purpose": "Docket strip fields only; never above a heading."
+      },
+      "data": {
+        "displayName": "Data",
+        "purpose": "IDs, tool names, T+ times, measured values only."
+      }
+    },
+    "themes": {
+      "default": "report-paper (light)",
+      "dark": "evening docket via :root[data-theme=\"dark\"]; evening-* tokens map onto the same CSS custom properties",
+      "cssVariables": "web/styles.css :root and :root[data-theme=\"dark\"]"
+    },
+    "patterns": [
+      {
+        "name": "hazard-hatch",
+        "value": "repeating-linear-gradient(-45deg, var(--signal) 0 2px, transparent 2px 6px)",
+        "purpose": "Injected faults and the failing agent's measurement only."
+      }
+    ],
+    "shadows": [
+      {
+        "name": "sheet-on-desk",
+        "value": "0 1px 0 var(--line-soft), 0 18px 40px -24px var(--shadow)",
+        "purpose": "The event rail."
+      },
+      {
+        "name": "exhibit",
+        "value": "0 24px 60px -32px var(--shadow)",
+        "purpose": "Video exhibit frame."
+      },
+      {
+        "name": "dialog",
+        "value": "0 24px 60px var(--shadow)",
+        "purpose": "Modal and search dialogs."
+      },
+      {
+        "name": "consent",
+        "value": "0 16px 40px -12px var(--shadow)",
+        "purpose": "Consent sheet."
+      },
+      {
+        "name": "floating",
+        "value": "0 6px 20px var(--shadow)",
+        "purpose": "Floating buttons."
+      },
+      {
+        "name": "tooltip",
+        "value": "0 8px 24px var(--shadow)",
+        "purpose": "Chart tooltips."
+      },
+      {
+        "name": "shadow-color",
+        "value": "rgba(13,27,42,.16) light / rgba(0,0,0,.45) dark",
+        "purpose": "--shadow token."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-record",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Record entries, stamps, underlines, dialogs."
+      },
+      {
+        "name": "enter-record",
+        "value": "clip-path inset reveal left to right, 600ms, 420ms stagger",
+        "purpose": "Rail rows written into the record."
+      },
+      {
+        "name": "fault-flash",
+        "value": "22% red wash fading over 1100ms ease-out",
+        "purpose": "Fault rows during rail playback."
+      },
+      {
+        "name": "stamp-in",
+        "value": "scale 1.25 to 1 at -6deg, 500ms",
+        "purpose": "Finding stamp presses in last."
+      },
+      {
+        "name": "bar-in",
+        "value": "scaleX 0 to 1 from left, 900ms, v2 delayed 150ms",
+        "purpose": "Measurement bars, once."
+      },
+      {
+        "name": "feedback",
+        "value": "100-150ms",
+        "purpose": "Hover, press, colour and border transitions."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "final state at once; all transitions and animations off",
+        "purpose": "prefers-reduced-motion: reduce."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "trace-wide",
+        "value": "1280px"
+      },
+      {
+        "name": "tablet",
+        "value": "1080px"
+      },
+      {
+        "name": "site-nav",
+        "value": "960px"
+      },
+      {
+        "name": "stack",
+        "value": "900px"
+      },
+      {
+        "name": "trace-stack",
+        "value": "860px"
+      },
+      {
+        "name": "mobile",
+        "value": "760px"
+      }
+    ],
+    "fonts": {
+      "source": "Google Fonts",
+      "url": "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Public+Sans:wght@400..700&family=JetBrains+Mono:wght@400;600&display=swap"
+    }
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Every action, written in ink.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Create free account</button>",
+      "css": ".ds-btn { display:inline-flex; align-items:center; gap:8px; height:34px; padding:0 14px; border-radius:var(--radius-s,2px); border:1px solid var(--line,#c3ccd4); background:var(--raised,#e6ebef); color:var(--ink,#0d1b2a); font:600 13px 'Public Sans',system-ui,sans-serif; cursor:pointer; transition:background-color .15s, border-color .15s, transform .1s; } .ds-btn:active { transform:translateY(1px); } .ds-btn:focus-visible { outline:2px solid var(--focus,#1f5f8b); outline-offset:2px; } .ds-btn-primary { background:var(--primary,#0d1b2a); color:var(--on-primary,#f1f4f6); border-color:var(--primary,#0d1b2a); } .ds-btn-primary:hover { background:color-mix(in srgb, var(--primary,#0d1b2a) 86%, var(--focus,#1f5f8b)); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Second action beside a primary.",
+      "html": "<button class=\"ds-btn2\">Watch the demo</button>",
+      "css": ".ds-btn2 { display:inline-flex; align-items:center; height:34px; padding:0 14px; border-radius:var(--radius-s,2px); border:1px solid var(--line,#c3ccd4); background:var(--raised,#e6ebef); color:var(--ink,#0d1b2a); font:600 13px 'Public Sans',system-ui,sans-serif; cursor:pointer; transition:background-color .15s, border-color .15s; } .ds-btn2:hover { border-color:var(--line-strong,#8d9aa6); background:color-mix(in srgb, var(--raised,#e6ebef) 70%, var(--line,#c3ccd4)); } .ds-btn2:focus-visible { outline:2px solid var(--focus,#1f5f8b); outline-offset:2px; } .ds-btn2:active { transform:translateY(1px); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input-text",
+      "description": "Sign-in, contact and account fields.",
+      "html": "<label class=\"ds-field\"><span>Email</span><input class=\"ds-input\" type=\"email\" placeholder=\"you@company.com\"></label>",
+      "css": ".ds-field { display:grid; gap:6px; font:600 14px 'Public Sans',system-ui,sans-serif; color:var(--ink,#0d1b2a); } .ds-input { width:100%; background:var(--surface,#fbfcfd); border:1px solid var(--line-strong,#8d9aa6); border-radius:var(--radius-s,2px); padding:11px 12px; font:400 15px 'Public Sans',system-ui,sans-serif; color:var(--ink,#0d1b2a); transition:border-color .15s, box-shadow .15s; } .ds-input:focus-visible { outline:none; border-color:var(--focus,#1f5f8b); box-shadow:0 0 0 3px color-mix(in srgb, var(--focus,#1f5f8b) 25%, transparent); } .ds-input[aria-invalid=true] { border-color:var(--fail,#c8102e); }"
+    },
+    {
+      "name": "Site Navigation",
+      "kind": "nav",
+      "refersTo": "site-nav",
+      "description": "Header links with an ink underline drawn from the left.",
+      "html": "<nav class=\"ds-nav\"><a href=\"#\" aria-current=\"page\">Demo</a><a href=\"#\">How it works</a><a href=\"#\">Pricing</a><a href=\"#\">Sign in</a></nav>",
+      "css": ".ds-nav { display:flex; gap:20px; font:500 14px 'Public Sans',system-ui,sans-serif; } .ds-nav a { position:relative; color:var(--ink-2,#33475b); text-decoration:none; transition:color .15s; } .ds-nav a::after { content:''; position:absolute; left:0; right:0; bottom:-5px; height:1px; background:var(--ink,#0d1b2a); transform:scaleX(0); transform-origin:left; transition:transform .25s cubic-bezier(.16,1,.3,1); } .ds-nav a:hover, .ds-nav a[aria-current=page] { color:var(--ink,#0d1b2a); } .ds-nav a:hover::after, .ds-nav a[aria-current=page]::after { transform:scaleX(1); } .ds-nav a:focus-visible { outline:2px solid var(--focus,#1f5f8b); outline-offset:2px; }"
+    },
+    {
+      "name": "Docket Strip",
+      "kind": "custom",
+      "refersTo": "docket-strip",
+      "description": "Record header of real fields; never a heading label.",
+      "html": "<div class=\"ds-docket\"><span>Docket <b class=\"id\">ACL-ECOM-0002</b></span><span>Investigation report</span><span class=\"closed\">Closed · regression saved</span></div>",
+      "css": ".ds-docket { display:flex; flex-wrap:wrap; border-top:2px solid var(--ink,#0d1b2a); border-bottom:1px solid var(--line,#c3ccd4); font:600 12px/1 'Public Sans',system-ui,sans-serif; color:var(--muted,#56677a); text-transform:uppercase; letter-spacing:.08em; } .ds-docket > span { padding:10px 16px 10px 0; margin-right:16px; border-right:1px solid var(--line,#c3ccd4); } .ds-docket > span:last-child { border-right:0; } .ds-docket b { color:var(--ink,#0d1b2a); font-weight:600; } .ds-docket .id { font-family:'JetBrains Mono',ui-monospace,monospace; text-transform:none; letter-spacing:.02em; } .ds-docket .closed { color:var(--pass-ink,#17603f); }"
+    },
+    {
+      "name": "Probable Cause",
+      "kind": "card",
+      "refersTo": "probable-cause",
+      "description": "The finding, in a red-tinted square block.",
+      "html": "<div class=\"ds-pc\"><h4>Probable cause</h4><p>The gateway committed the refund, then timed out. The agent retried <code>issue_refund</code> without checking status.</p></div>",
+      "css": ".ds-pc { padding:16px 18px 18px; border:1px solid color-mix(in srgb, var(--signal,#c8102e) 50%, var(--line,#c3ccd4)); background:color-mix(in srgb, var(--signal,#c8102e) 5%, var(--surface,#fbfcfd)); max-width:60ch; } .ds-pc h4 { margin:0; font:700 12.5px/1 'Public Sans',system-ui,sans-serif; text-transform:uppercase; letter-spacing:.12em; color:var(--signal-ink,#b00e28); } .ds-pc p { margin:8px 0 0; font:400 15px/1.5 'Public Sans',system-ui,sans-serif; color:var(--ink,#0d1b2a); } .ds-pc code { font:500 13.5px 'JetBrains Mono',ui-monospace,monospace; background:color-mix(in srgb, var(--signal,#c8102e) 10%, transparent); padding:1px 5px; }"
+    },
+    {
+      "name": "Event Rail",
+      "kind": "custom",
+      "refersTo": "event-rail",
+      "description": "Sequence of events with T+ times; fault rows in red.",
+      "html": "<figure class=\"ds-rail\"><figcaption><b>Sequence of events</b><span>Recorded trace</span></figcaption><ol><li><time>T+3.28s</time><span>Issues the refund</span></li><li class=\"fault\"><time>T+5.93s</time><span><b>Injected fault:</b> gateway times out</span></li><li><time>T+6.72s</time><span>Retries without checking status</span></li></ol><div class=\"ds-stamp\"><small>Finding</small>Duplicate refund</div></figure>",
+      "css": ".ds-rail { margin:0; background:var(--surface,#fbfcfd); border:1px solid var(--line,#c3ccd4); box-shadow:0 1px 0 var(--line-soft,#dbe1e6), 0 18px 40px -24px var(--shadow,rgba(13,27,42,.16)); font-family:'Public Sans',system-ui,sans-serif; } .ds-rail figcaption { display:flex; justify-content:space-between; gap:12px; padding:14px 18px; border-bottom:1px solid var(--line,#c3ccd4); } .ds-rail figcaption b { font:800 17px 'Archivo',sans-serif; font-stretch:85%; color:var(--ink,#0d1b2a); } .ds-rail figcaption span { font-size:12.5px; color:var(--muted,#56677a); } .ds-rail ol { list-style:none; margin:0; padding:6px 0 10px; position:relative; } .ds-rail ol::before { content:''; position:absolute; left:110px; top:0; bottom:0; width:1px; background:var(--line,#c3ccd4); } .ds-rail li { display:grid; grid-template-columns:74px 1fr; column-gap:37px; padding:9px 18px; position:relative; } .ds-rail li::before { content:''; position:absolute; left:106px; top:15px; width:9px; height:9px; border-radius:50%; background:var(--surface,#fbfcfd); border:1.5px solid var(--ink-2,#33475b); } .ds-rail time { font:500 12px/1.6 'JetBrains Mono',ui-monospace,monospace; color:var(--muted,#56677a); text-align:right; } .ds-rail li span { font-size:14px; color:var(--ink,#0d1b2a); } .ds-rail li.fault::before { background:var(--signal,#c8102e); border-color:var(--signal,#c8102e); } .ds-rail li.fault time, .ds-rail li.fault b { color:var(--signal-ink,#b00e28); } .ds-stamp { width:fit-content; margin:2px 22px 16px auto; transform:rotate(-6deg); border:2.5px solid var(--signal,#c8102e); color:var(--signal,#c8102e); padding:6px 12px 7px; font:800 22px/1 'Archivo',sans-serif; font-stretch:75%; text-transform:uppercase; letter-spacing:.04em; transition:transform .3s cubic-bezier(.16,1,.3,1); } .ds-stamp:hover { transform:rotate(-6deg) scale(1.04); } .ds-stamp small { display:block; font-size:10px; letter-spacing:.2em; margin-bottom:4px; font-stretch:100%; }"
+    },
+    {
+      "name": "Measurement Bars",
+      "kind": "custom",
+      "refersTo": "compare",
+      "description": "Failing v1 in red hatch, fixed v2 in ink.",
+      "html": "<div class=\"ds-bars\"><div class=\"v1\"><span>Original agent (v1)</span><i style=\"width:19%\"></i><b>19 / 100</b></div><div class=\"v2\"><span>Fixed agent (v2)</span><i style=\"width:99%\"></i><b>99 / 100</b></div></div>",
+      "css": ".ds-bars { display:grid; gap:10px; font-family:'Public Sans',system-ui,sans-serif; } .ds-bars > div { display:grid; grid-template-columns:150px minmax(0,1fr) 76px; align-items:center; gap:14px; } .ds-bars span { font-size:14px; color:var(--ink-2,#33475b); } .ds-bars i { display:block; height:22px; background:var(--ink,#0d1b2a); } .ds-bars .v1 i { background:repeating-linear-gradient(-45deg, var(--signal,#c8102e) 0 2px, transparent 2px 6px); box-shadow:inset 0 0 0 1.5px var(--signal,#c8102e); } .ds-bars b { font:600 14px 'JetBrains Mono',ui-monospace,monospace; text-align:right; color:var(--ink,#0d1b2a); } .ds-bars .v1 b { color:var(--signal-ink,#b00e28); }"
+    },
+    {
+      "name": "Exhibit Frame",
+      "kind": "card",
+      "refersTo": "exhibit-tag",
+      "description": "Raw evidence on navy; figcaption is the Exhibit tag.",
+      "html": "<figure class=\"ds-exhibit\"><figcaption>Exhibit A · recorded from the real app</figcaption><div class=\"ds-exhibit-body\"></div></figure>",
+      "css": ".ds-exhibit { margin:0; border:1px solid var(--line,#c3ccd4); background:#0d1b2a; box-shadow:0 24px 60px -32px var(--shadow,rgba(13,27,42,.16)); } .ds-exhibit figcaption { padding:10px 14px; font:600 12.5px/1.2 'Public Sans',system-ui,sans-serif; color:#b4c2cf; border-bottom:1px solid #2a3e52; } .ds-exhibit-body { aspect-ratio:16/9; background:var(--code-bg,#0d1b2a); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Investigation Docket",
+    "overview": "Every crash gets an investigation. The system is set as an air-accident investigation report: cool report paper, docket-navy ink, ruled tables, a sequence-of-events rail with T+ times, and a red finding stamp pressed onto the record. Pages read as documents in a case file, not as marketing panels. Hairline rules and full-width ink rules divide the record where another product would reach for cards.\n\nTwo scenes share one set of roles. Report paper (light) is the default, for desks by day and projectors in lit rooms. The evening docket (dark) re-steps the same roles to navy paper with paper ink, each pair re-checked for contrast. The density is a report's: generous section breaks, tight internal rows, numbers aligned in tabular figures.\n\nRed has one job. It marks what went wrong: faults, failures, probable cause, the finding stamp. Everything else, including every action, is written in ink.",
+    "keyCharacteristics": [
+      "Report paper and docket-navy ink; finding red only for faults, failures, probable cause and stamps.",
+      "Condensed Archivo headings (72–88% width), Public Sans text, JetBrains Mono only for IDs, tool names, T+ times and measured values.",
+      "Hairline rules and 2px ink top-rules instead of cards; near-square corners (2–3px).",
+      "One rotated element on any page: the finding stamp.",
+      "Motion as record-keeping: entries are written in left to right, stamps press in, everything else is feedback under 200 ms."
+    ],
+    "rules": [
+      {
+        "name": "The Red Is Law Rule",
+        "body": "Finding red appears only on faults, failures, probable cause and stamps. Never on a button, link, heading, brand mark or decoration. If nothing failed, nothing on the screen is red.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Acts Rule",
+        "body": "Every action is written in ink: primary buttons are navy on paper (paper on navy in the evening), never coloured.",
+        "section": "colors"
+      },
+      {
+        "name": "The Hatch Means Fault Rule",
+        "body": "The red diagonal hatch (2px red, 4px gap, -45deg) marks injected faults and the failing agent's measurement. It is not a texture.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Is Evidence Rule",
+        "body": "Monospace sets only IDs (ACL-ECOM-0002, ORD-1001), tool names (issue_refund), T+ times and measured values (19 / 100). Never headings, labels, buttons or decoration.",
+        "section": "typography"
+      },
+      {
+        "name": "The No Eyebrow Rule",
+        "body": "No tag, kicker or small caps line sits above a heading. The docket strip is a record of real fields (docket number, report type, agent, status), not a label for the heading under it.",
+        "section": "typography"
+      },
+      {
+        "name": "The Condensed Heading Rule",
+        "body": "Archivo headings run between 72% and 88% width; the wordmark is the only Archivo set wide (110%).",
+        "section": "typography"
+      },
+      {
+        "name": "The Rules Not Cards Rule",
+        "body": "Group content with hairlines and ink top-rules. A boxed, shadowed card is reserved for an object that sits on the record.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** reserve finding red for faults, failures, probable cause and stamps; draw the failing measurement in the red hazard hatch and the fixed one in ink.",
+      "**Do** set IDs, tool names, T+ times and measured values in JetBrains Mono, and nothing else.",
+      "**Do** divide the record with hairlines and open ledgers with an ink top-rule (2px for record headers and tables, 1px for lists).",
+      "**Do** keep Archivo headings condensed (72–88% width) and heavy (700–800).",
+      "**Do** keep raw-data exhibits (code, video) on navy in both themes.",
+      "**Do** invert the auth case-cover per theme.",
+      "**Do** show the final state at once under reduced motion."
+    ],
+    "donts": [
+      "**Don't** use red for buttons, links, emphasis, the brand mark or decoration.",
+      "**Don't** put an eyebrow, kicker or section tag above a heading.",
+      "**Don't** set labels, headings or step numbers in mono.",
+      "**Don't** rotate anything other than the finding stamp.",
+      "**Don't** use the dashboard series colours (series-v1, series-v2) on the public site.",
+      "**Don't** wrap sections in shadowed cards; a shadow means an object sits on the record.",
+      "**Don't** round corners beyond 3px, outside the pill-shaped mode indicator and circular nodes."
+    ]
+  }
+}

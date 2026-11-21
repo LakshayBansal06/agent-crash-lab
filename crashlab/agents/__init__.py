@@ -12,6 +12,16 @@ REGISTRY = {
 LLM_REFS = ("llm", "llm-agent", "gemini", "gemini-agent")  # model-backed agents, built on demand
 
 
+def missing_key(ref: str) -> str | None:
+    """The environment variable a model-backed agent needs but doesn't have, or None.
+    Without it every episode would 'fail' on an auth error, which reads like a real finding."""
+    import os
+
+    need = {"llm": "ANTHROPIC_API_KEY", "llm-agent": "ANTHROPIC_API_KEY",
+            "gemini": "GEMINI_API_KEY", "gemini-agent": "GEMINI_API_KEY"}.get(ref)
+    return need if need and not os.environ.get(need) else None
+
+
 def make_agent(ref: str) -> Agent:
     if ref in ("llm", "llm-agent"):
         from .llm import LLMToolAgent
@@ -49,5 +59,5 @@ class ReplayAgent(Agent):
         return FinalAnswer(a.text or "") if a.kind == "final" else ToolCall(a.tool, dict(a.args))
 
 
-__all__ = ["LLM_REFS", "Agent", "ToolCall", "FinalAnswer", "Observation", "ScriptedAgent", "make_agent", "REGISTRY",
+__all__ = ["LLM_REFS", "missing_key", "Agent", "ToolCall", "FinalAnswer", "Observation", "ScriptedAgent", "make_agent", "REGISTRY",
            "ReplayAgent", "SupportAgentV1", "SupportAgentV2"]
