@@ -2,6 +2,7 @@
 
 Each test names the risk it guards against."""
 import json
+import os
 import re
 import sqlite3
 from pathlib import Path
@@ -303,8 +304,14 @@ def test_serve_refuses_unauthenticated_public_bind(tmp_path, monkeypatch, capsys
     from crashlab.cli import main
 
     monkeypatch.delenv("CRASHLAB_AUTH", raising=False)
+    monkeypatch.delenv("PORT", raising=False)
     assert main(["--db", str(tmp_path / "s.db"), "serve", "--host", "0.0.0.0", "--no-auth"]) == 2
-    assert main(["--db", str(tmp_path / "s.db"), "serve", "--host", "0.0.0.0"]) == 2  # required, but no keys yet
+    import uvicorn
+
+    started = {}
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **kw: started.update(kw))
+    assert main(["--db", str(tmp_path / "s.db"), "serve", "--host", "0.0.0.0"]) == 0
+    assert started["host"] == "0.0.0.0" and os.environ["CRASHLAB_AUTH"] == "required"  # public bind: sign-in always on
 
 
 def test_summary_keeps_minimization_stats(app):

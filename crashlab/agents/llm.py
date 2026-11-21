@@ -82,3 +82,74 @@ class LLMToolAgent(Agent):
                 return FinalAnswer(text or "(no response)")
         self.in_flight = self.pending.pop(0)
         return ToolCall(self.in_flight["name"], dict(self.in_flight.get("input") or {}))
+
+
+# ----------------------------------------------------------------- Gemini --
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_DEFAULT_MODEL = "gemini-3.8-flash"
+
+
+def _gemini_transport(model: str, body: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover - needs network
+    import httpx
+
+    r = httpx.post(GEMINI_URL.format(model=model), json=body, timeout=60, headers={
+        "x-goog-api-key": os.environ["GEMINI_API_KEY"], "content-type": "application/json"})
+    r.raise_for_status()
+    return r.json()
+
+
+def _gemini_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    decls = []
+    for t in tools:
+        d = {"name": t["name"], "description": t["description"]}
+        if t["input_schema"].get("properties"):  # Gemini rejects an object schema with no properties
+            d["parameters"] = t["input_schema"]
+        decls.append(d)
+    return [{"functionDeclarations": decls}]
+
+
+class GeminiToolAgent(Agent):
+    """The same tool-calling loop as LLMToolAgent, over Google's Gemini generateContent API."""
+
+    name = "gemini-agent"
+    framework = "gemini-generate-content"
+
+    def __init__(self, model: str | None = None, transport: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
+                 max_tokens: int = 1024) -> None:
+        self.model = model or os.environ.get("GEMINI_MODEL", GEMINI_DEFAULT_MODEL)
+        self.version = self.model
+        self.transport = transport or _gemini_transport
+        self.max_tokens = max_tokens
+
+    def reset(self, task, tools, context, rng):
+        self.system = SYSTEM_PROMPT.format(customer_id=context.get("customer_id"))
+        self.tool_decls = _gemini_tools(tools)
+        self.contents: list[dict[str, Any]] = [{"role": "user", "parts": [{"text": task}]}]
+        self.pending: list[dict[str, Any]] = []
+        self.results: list[dict[str, Any]] = []
+        self.in_flight: dict[str, Any] | None = None
+
+    def act(self, observation: Observation | None):
+        if observation is not None and self.in_flight is not None:
+            payload = {"result": observation.result} if observation.ok else {"error": observation.error}
+            resp = {"name": self.in_flight["name"], "response": json.loads(json.dumps(payload, default=str))}
+            if self.in_flight.get("id"):
+                resp["id"] = self.in_flight["id"]
+            self.results.append({"functionResponse": resp})
+            self.in_flight = None
+        if not self.pending:
+            if self.results:
+                self.contents.append({"role": "user", "parts": self.results})
+                self.results = []
+            out = self.transport(self.model, {
+                "systemInstruction": {"parts": [{"text": self.system}]}, "contents": self.contents,
+                "tools": self.tool_decls, "generationConfig": {"maxOutputTokens": self.max_tokens}})
+            content = ((out.get("candidates") or [{}])[0].get("content")) or {"role": "model", "parts": []}
+            self.contents.append(content)  # echoed verbatim: Gemini needs its thought signatures back
+            parts = content.get("parts", [])
+            self.pending = [p["functionCall"] for p in parts if "functionCall" in p]
+            if not self.pending:
+                text = " ".join(p.get("text", "") for p in parts if not p.get("thought")).strip()
+                return FinalAnswer(text or "(no response)")
+        self.in_flight = self.pending.pop(0)
+        return ToolCall(self.in_flight["name"], dict(self.in_flight.get("args") or {}))

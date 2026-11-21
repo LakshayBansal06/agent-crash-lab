@@ -45,7 +45,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from crashlab import __version__
-from crashlab.agents import REGISTRY
+from crashlab.agents import LLM_REFS, REGISTRY
 from crashlab.diagnosis import Failure
 from crashlab.environments import make_environment
 from crashlab.experiment import run_experiment, run_regressions
@@ -56,6 +56,7 @@ from crashlab.scenarios import load_scenarios, scenario_by_id, validate_scenario
 from crashlab.store import Principal, Store
 
 from .observability import Metrics, log
+from .auth import mount_auth, print_setup_link
 from .site import mount_site
 from .security import (DOCS_CSP, ID_PATTERN, MAX_BODY_BYTES, SECURITY_HEADERS, auth_mode, classify, client_id, cors_origins,
                        rate_limiter, requires)
@@ -297,7 +298,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.get(f"{API}/whoami")
     def whoami(p: Principal = requires("read")) -> dict[str, Any]:
-        return {"key_id": p.key_id, "project_id": p.project_id, "scopes": sorted(p.scopes), "auth": auth_mode()}
+        out = {"key_id": p.key_id, "project_id": p.project_id, "scopes": sorted(p.scopes), "auth": auth_mode()}
+        if p.key_id.startswith("user:") and (u := store.get_user(p.key_id[5:])):
+            out["user"] = {k: u[k] for k in ("name", "email", "role")}
+        return out
 
     # ------------------------------------------------------------- api keys
     @app.get(f"{API}/api-keys")
@@ -334,6 +338,9 @@ def create_app(db_path: str | None = None) -> FastAPI:
         out.append({"ref": "llm", "id": "llm-agent", "name": "llm-agent",
                     "version": os.environ.get("CRASHLAB_MODEL", "claude-sonnet-5-5"),
                     "framework": "anthropic-messages", "available": bool(os.environ.get("ANTHROPIC_API_KEY"))})
+        out.append({"ref": "gemini", "id": "gemini-agent", "name": "gemini-agent",
+                    "version": os.environ.get("GEMINI_MODEL", "gemini-3.8-flash"),
+                    "framework": "gemini-generate-content", "available": bool(os.environ.get("GEMINI_API_KEY"))})
         return out
 
     @app.get(f"{API}/scenarios")
@@ -364,7 +371,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.post(f"{API}/experiments", status_code=202)
     def create_experiment(body: ExperimentIn, p: Principal = requires("write")) -> dict[str, Any]:
         for a in body.agents:
-            if a not in REGISTRY and a not in ("llm", "llm-agent"):
+            if a not in REGISTRY and a not in LLM_REFS:
                 raise HTTPException(422, f"unknown agent {a!r}")
         if sum(1 for j in jobs.values() if not j.done) >= max_jobs:
             raise HTTPException(429, "too many experiments running; try again shortly", headers={"Retry-After": "10"})
@@ -540,7 +547,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         if not regs:
             raise HTTPException(409, "regression suite is empty")
         for a in body.agents:
-            if a not in REGISTRY and a not in ("llm", "llm-agent"):
+            if a not in REGISTRY and a not in LLM_REFS:
                 raise HTTPException(422, f"unknown agent {a!r}")
         res = run_regressions(regs, body.agents, repeats=body.repeats)
         res["id"] = store.save_regression_run(res, p.project_id)
@@ -592,6 +599,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
                                 headers={"Cache-Control": "public, max-age=86400"})
 
     mount_site(app)
+    mount_auth(app)
     return app
 
 
@@ -629,5 +637,6 @@ def __getattr__(name: str) -> Any:
     if name == "app":
         if _app is None:
             _app = create_app()
+            print_setup_link(_app)
         return _app
     raise AttributeError(name)

@@ -16,6 +16,26 @@ ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,127}$"
 MAX_BODY_BYTES = int(os.environ.get("CRASHLAB_MAX_BODY_BYTES", str(5 * 1024 * 1024)))
 
 LOCAL_PRINCIPAL = Principal("local-dev", "default", frozenset({"admin"}))
+SESSION_COOKIE = "acl_session"
+SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
+
+
+def public_url() -> str:
+    """The site's own https address when deployed (Render sets RENDER_EXTERNAL_URL automatically)."""
+    return (os.environ.get("CRASHLAB_PUBLIC_URL", "").strip() or os.environ.get("RENDER_EXTERNAL_URL", "").strip()).rstrip("/")
+
+
+def same_origin(request: Request) -> bool:
+    """CSRF guard for cookie-authenticated writes: the browser says where the request came from."""
+    origin = request.headers.get("origin")
+    if origin:
+        return origin.rstrip("/") in {public_url(), str(request.base_url).rstrip("/")} - {""}
+    return request.headers.get("sec-fetch-site") in (None, "same-origin", "none")
+
+
+def user_principal(user: dict) -> Principal:
+    scopes = {"read", "write"} | ({"admin"} if user["role"] == "admin" else set())
+    return Principal("user:" + user["id"], user["project_id"], frozenset(scopes))
 
 
 def auth_mode() -> str:
@@ -46,10 +66,17 @@ def requires(scope: str):
             request.state.principal = LOCAL_PRINCIPAL
             return LOCAL_PRINCIPAL
         store = request.app.state.store
-        p = store.authenticate(bearer(request))
+        token = bearer(request)
+        p = store.authenticate(token) if token else None
+        if p is None and not token:
+            user = store.session_user(request.cookies.get(SESSION_COOKIE))
+            if user:
+                if request.method not in SAFE_METHODS and not same_origin(request):
+                    raise HTTPException(403, "cross-site request blocked")
+                p = user_principal(user)
         if p is None:
             request.app.state.metrics.inc("auth_failures_total")
-            raise HTTPException(401, "missing or invalid API key", headers={"WWW-Authenticate": "Bearer"})
+            raise HTTPException(401, "sign in or send a valid API key", headers={"WWW-Authenticate": "Bearer"})
         if not p.can(scope):
             raise HTTPException(403, f"this key lacks the '{scope}' scope")
         request.state.principal = p
@@ -103,6 +130,7 @@ def rate_limiter() -> RateLimiter:
         "write": per_minute("CRASHLAB_RATE_WRITE_PER_MIN", 60),
         "expensive": per_minute("CRASHLAB_RATE_EXPENSIVE_PER_MIN", 10),
         "contact": per_minute("CRASHLAB_RATE_CONTACT_PER_MIN", 5),
+        "auth": per_minute("CRASHLAB_RATE_AUTH_PER_MIN", 10),
     })
 
 

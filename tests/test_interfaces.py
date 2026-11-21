@@ -1,7 +1,7 @@
 """SDK, CLI, LLM agent loop and HTTP API."""
 import json
 
-from crashlab.agents.llm import LLMToolAgent
+from crashlab.agents.llm import GeminiToolAgent, LLMToolAgent
 from crashlab.cli import main
 from crashlab.evaluators import evaluate_episode
 from crashlab.runner import run_episode
@@ -59,6 +59,33 @@ def test_llm_agent_loop_with_fake_transport():
     assert evaluate_episode(sc, ep).passed
     assert [b["type"] for b in sent[1]["messages"][-1]["content"]] == ["tool_result", "tool_result"]
     assert any(t["name"] == "issue_refund" for t in sent[0]["tools"])
+
+
+def test_gemini_agent_loop_with_fake_transport():
+    sig = {"thoughtSignature": "opaque"}
+    script = iter([
+        {"candidates": [{"content": {"role": "model", "parts": [
+            {"functionCall": {"name": "get_order", "args": {"order_id": "ORD-1001"}}, **sig},
+            {"functionCall": {"name": "check_refund_eligibility", "args": {"order_id": "ORD-1001"}}}]}}]},
+        {"candidates": [{"content": {"role": "model", "parts": [{"functionCall": {
+            "name": "issue_refund", "args": {"order_id": "ORD-1001", "amount": 4999, "idempotency_key": "x"}}}]}}]},
+        {"candidates": [{"content": {"role": "model", "parts": [
+            {"text": "thinking...", "thought": True}, {"text": "Your refund for ORD-1001 has been initiated."}]}}]},
+    ])
+    sent = []
+
+    def transport(model, body):
+        sent.append(json.loads(json.dumps(body)))
+        return next(script)
+
+    sc = scenario_by_id("ACL-ECOM-0001")
+    ep = run_episode(sc, GeminiToolAgent(model="fake", transport=transport), 1, "gemini")
+    assert evaluate_episode(sc, ep).passed
+    assert ep.final_message == "Your refund for ORD-1001 has been initiated."  # thought parts are not the reply
+    assert sent[1]["contents"][1]["parts"][0] == {"functionCall": {"name": "get_order", "args": {"order_id": "ORD-1001"}}, **sig}
+    assert [list(p) for p in sent[1]["contents"][-1]["parts"]] == [["functionResponse"], ["functionResponse"]]
+    decls = sent[0]["tools"][0]["functionDeclarations"]
+    assert all("parameters" not in d or d["parameters"]["properties"] for d in decls)
 
 
 def test_cli_run_gate_and_regress(tmp_path, capsys):

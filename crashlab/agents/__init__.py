@@ -9,13 +9,20 @@ REGISTRY = {
 }
 
 
+LLM_REFS = ("llm", "llm-agent", "gemini", "gemini-agent")  # model-backed agents, built on demand
+
+
 def make_agent(ref: str) -> Agent:
     if ref in ("llm", "llm-agent"):
         from .llm import LLMToolAgent
 
         return LLMToolAgent()
+    if ref in ("gemini", "gemini-agent"):
+        from .llm import GeminiToolAgent
+
+        return GeminiToolAgent()
     if ref not in REGISTRY:
-        raise KeyError(f"unknown agent {ref!r}; known: {sorted(REGISTRY)} or 'llm'")
+        raise KeyError(f"unknown agent {ref!r}; known: {sorted(REGISTRY)}, 'llm' or 'gemini'")
     return REGISTRY[ref]()
 
 
@@ -42,5 +49,5 @@ class ReplayAgent(Agent):
         return FinalAnswer(a.text or "") if a.kind == "final" else ToolCall(a.tool, dict(a.args))
 
 
-__all__ = ["Agent", "ToolCall", "FinalAnswer", "Observation", "ScriptedAgent", "make_agent", "REGISTRY",
+__all__ = ["LLM_REFS", "Agent", "ToolCall", "FinalAnswer", "Observation", "ScriptedAgent", "make_agent", "REGISTRY",
            "ReplayAgent", "SupportAgentV1", "SupportAgentV2"]

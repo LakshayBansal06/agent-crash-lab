@@ -36,6 +36,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from .observability import log
+from .security import public_url
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SITE_DIR = WEB_DIR / "site"
@@ -92,8 +93,7 @@ def turnstile() -> tuple[str, str] | None:
 
 
 def base_url(request: Request) -> str:
-    configured = _env("CRASHLAB_PUBLIC_URL").rstrip("/")
-    return configured or str(request.base_url).rstrip("/")
+    return public_url() or str(request.base_url).rstrip("/")
 
 
 def site_csp(*, analytics: bool, captcha: bool) -> str:

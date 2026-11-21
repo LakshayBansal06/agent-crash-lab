@@ -318,18 +318,12 @@ def cmd_serve(args) -> int:
             return 2
         os.environ["CRASHLAB_AUTH"] = "off"
     elif explicit is None:
-        os.environ["CRASHLAB_AUTH"] = "off" if is_loopback(args.host) else "required"
+        os.environ["CRASHLAB_AUTH"] = "required"  # sign-in on by default; --no-auth for a quick local look
     if os.environ["CRASHLAB_AUTH"] == "off" and not is_loopback(args.host):
         print(c("refusing to start: CRASHLAB_AUTH=off on a non-loopback address would expose the API", RED), file=sys.stderr)
         return 2
-    if os.environ["CRASHLAB_AUTH"] == "required":
-        from .store import Store
-
-        if not Store(args.db).has_api_keys():
-            print(c("auth is required but no API keys exist. Create one first:\n"
-                    "  crashlab keys create --name admin --scopes admin", YELLOW), file=sys.stderr)
-            return 2
-    mode = "local, auth off (loopback only)" if os.environ["CRASHLAB_AUTH"] == "off" else "API keys required"
+    os.environ.setdefault("PORT", str(args.port))  # for the first-run setup link
+    mode = "local, sign-in off (loopback only)" if os.environ["CRASHLAB_AUTH"] == "off" else "sign-in required"
     print(c(f"AGENT CRASH LAB on http://{args.host}:{args.port}  ·  {mode}", BOLD))
     uvicorn.run("server.app:app", host=args.host, port=args.port, reload=False, proxy_headers=False,
                 log_level="warning")

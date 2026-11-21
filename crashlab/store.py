@@ -87,12 +87,49 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE contact_messages ADD COLUMN source TEXT;
     """,
+    # 6 - human accounts: password (scrypt) and/or Google sign-in, server-side sessions, reset links
+    """
+    CREATE TABLE users (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT NOT NULL, password_hash TEXT,
+      google_sub TEXT UNIQUE, role TEXT NOT NULL DEFAULT 'user', project_id TEXT NOT NULL, created_at TEXT NOT NULL,
+      last_login_at TEXT, disabled_at TEXT
+    );
+    CREATE TABLE sessions (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL, expires_at REAL NOT NULL
+    );
+    CREATE INDEX sessions_by_user ON sessions(user_id);
+    CREATE TABLE password_resets (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at REAL NOT NULL, used_at TEXT
+    );
+    """,
 ]
+SESSION_DAYS = 14
+RESET_MINUTES = 60
+ROLES = ("user", "admin")
 CONTACT_RETENTION_DAYS = 180
 
 
 def _now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def hash_password(password: str, *, n: int = 2**14) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(password.encode(), salt=salt, n=n, r=8, p=1, dklen=32)
+    return f"scrypt${n}$8$1${salt.hex()}${dk.hex()}"
+
+
+def check_password(password: str, stored: str | None) -> bool:
+    try:
+        _, n, r, p, salt, want = (stored or "").split("$")
+        dk = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), n=int(n), r=int(r), p=int(p), dklen=32)
+    except ValueError:
+        # unknown email or Google-only account: spend the same time, so response time reveals nothing
+        hashlib.scrypt(password.encode(), salt=b"x" * 16, n=2**14, r=8, p=1, dklen=32)
+        return False
+    return hmac.compare_digest(dk.hex(), want)
 
 
 def hash_key(token: str) -> str:
@@ -216,6 +253,106 @@ class Store:
 
     def has_api_keys(self) -> bool:
         return self.db.execute("SELECT 1 FROM api_keys WHERE revoked_at IS NULL LIMIT 1").fetchone() is not None
+
+    # ---------------------------------------------------------------- users --
+    USER_COLS = ("id, email, name, role, project_id, created_at, last_login_at, disabled_at, "
+                 "google_sub IS NOT NULL AS google, password_hash IS NOT NULL AS has_password")
+
+    def create_user(self, email: str, name: str, *, password: str | None = None, google_sub: str | None = None,
+                    role: str = "user") -> dict[str, Any]:
+        if role not in ROLES:
+            raise ValueError(f"role must be one of {ROLES}")
+        uid = "usr_" + secrets.token_hex(8)
+        with self._lock, self.db:
+            self.db.execute("INSERT INTO users(id, email, name, password_hash, google_sub, role, project_id, created_at) "
+                            "VALUES (?,?,?,?,?,?,?,?)",
+                            (uid, email.strip(), name.strip(), hash_password(password) if password else None,
+                             google_sub, role, "p_" + uid[4:], _now()))
+        return self.get_user(uid)
+
+    def get_user(self, uid: str) -> dict[str, Any] | None:
+        cols = self.USER_COLS
+        row = self.db.execute(f"SELECT {cols} FROM users WHERE id=?", (uid,)).fetchone()  # noqa: S608
+        return dict(row) if row else None
+
+    def user_by_email(self, email: str) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT id FROM users WHERE email=?", (email.strip(),)).fetchone()
+        return self.get_user(row["id"]) if row else None
+
+    def user_by_google(self, sub: str) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT id FROM users WHERE google_sub=?", (sub,)).fetchone()
+        return self.get_user(row["id"]) if row else None
+
+    def link_google(self, uid: str, sub: str) -> None:
+        with self._lock, self.db:
+            self.db.execute("UPDATE users SET google_sub=? WHERE id=?", (sub, uid))
+
+    def verify_login(self, email: str, password: str) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT id, password_hash FROM users WHERE email=?", (email.strip(),)).fetchone()
+        ok = check_password(password, row["password_hash"] if row else None)
+        return self.get_user(row["id"]) if ok and row else None
+
+    def set_password(self, uid: str, password: str) -> None:
+        with self._lock, self.db:
+            self.db.execute("UPDATE users SET password_hash=? WHERE id=?", (hash_password(password), uid))
+            self.db.execute("DELETE FROM sessions WHERE user_id=?", (uid,))  # a new password signs out every device
+
+    def update_user(self, uid: str, *, role: str | None = None, disabled: bool | None = None) -> None:
+        if role is not None and role not in ROLES:
+            raise ValueError(f"role must be one of {ROLES}")
+        with self._lock, self.db:
+            if role is not None:
+                self.db.execute("UPDATE users SET role=? WHERE id=?", (role, uid))
+            if disabled is not None:
+                self.db.execute("UPDATE users SET disabled_at=? WHERE id=?", (_now() if disabled else None, uid))
+                if disabled:
+                    self.db.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+
+    def list_users(self, limit: int = 500) -> list[dict[str, Any]]:
+        cols = self.USER_COLS
+        return [dict(r) for r in self.db.execute(f"SELECT {cols} FROM users ORDER BY created_at LIMIT ?", (limit,))]  # noqa: S608
+
+    def count_admins(self) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND disabled_at IS NULL").fetchone()[0]
+
+    def create_session(self, uid: str) -> str:
+        token = secrets.token_urlsafe(32)
+        with self._lock, self.db:
+            self.db.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
+            self.db.execute("INSERT INTO sessions(token_hash, user_id, created_at, expires_at) VALUES (?,?,?,?)",
+                            (hash_key(token), uid, _now(), time.time() + SESSION_DAYS * 86400))
+            self.db.execute("UPDATE users SET last_login_at=? WHERE id=?", (_now(), uid))
+        return token
+
+    def session_user(self, token: str | None) -> dict[str, Any] | None:
+        if not token or len(token) > 200:
+            return None
+        row = self.db.execute("SELECT user_id FROM sessions WHERE token_hash=? AND expires_at > ?",
+                              (hash_key(token), time.time())).fetchone()
+        user = self.get_user(row["user_id"]) if row else None
+        return user if user and not user["disabled_at"] else None
+
+    def end_session(self, token: str | None) -> None:
+        if token:
+            with self._lock, self.db:
+                self.db.execute("DELETE FROM sessions WHERE token_hash=?", (hash_key(token),))
+
+    def create_reset(self, uid: str) -> str:
+        token = secrets.token_urlsafe(32)
+        with self._lock, self.db:
+            self.db.execute("INSERT INTO password_resets(token_hash, user_id, expires_at) VALUES (?,?,?)",
+                            (hash_key(token), uid, time.time() + RESET_MINUTES * 60))
+        return token
+
+    def reset_user(self, token: str, *, consume: bool = False) -> dict[str, Any] | None:
+        """The account a valid, unused, unexpired reset link belongs to; consume=True spends the link."""
+        h = hash_key(token or "")
+        row = self.db.execute("SELECT user_id FROM password_resets WHERE token_hash=? AND used_at IS NULL AND expires_at > ?",
+                              (h, time.time())).fetchone()
+        if row and consume:
+            with self._lock, self.db:
+                self.db.execute("UPDATE password_resets SET used_at=? WHERE token_hash=?", (_now(), h))
+        return self.get_user(row["user_id"]) if row else None
 
     # ---------------------------------------------------------- experiments --
     def create_experiment(self, exp_id: str, name: str, config: dict[str, Any], project_id: str = DEFAULT_PROJECT) -> None:
