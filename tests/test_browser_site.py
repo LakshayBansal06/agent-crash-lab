@@ -216,9 +216,9 @@ def test_scrolling_aids_floating_buttons_and_copy(server, browser):
             break
         page.wait_for_timeout(50)
     assert page.evaluate("window.scrollY") < 5
-    page.click(".terminal .copy-btn")
+    page.click(".run-local .copy-btn")
     assert "crashlab demo" in page.evaluate("navigator.clipboard.readText()")
-    assert page.inner_text(".terminal .copy-btn") == "Copied"
+    assert page.inner_text(".run-local .copy-btn") == "Copied"
     page.click(".faq-tools .btn")
     assert page.evaluate("[...document.querySelectorAll('.faq details')].every(d => d.open)")
     page.reload()

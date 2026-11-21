@@ -243,7 +243,8 @@
       const setState = (shown) => {
         inp.type = shown ? "text" : "password";
         b.setAttribute("aria-pressed", String(shown));
-        b.setAttribute("aria-label", shown ? "Hide key" : "Show key");
+        const what = ((inp.labels && inp.labels[0] && inp.labels[0].textContent) || "password").trim().toLowerCase();
+        b.setAttribute("aria-label", `${shown ? "Hide" : "Show"} ${what}`);
         b.innerHTML = `${ICONS.eye}<span>${shown ? "Hide" : "Show"}</span>`;
       };
       b.addEventListener("click", () => { setState(inp.type === "password"); inp.focus(); });

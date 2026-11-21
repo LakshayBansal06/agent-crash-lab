@@ -36,7 +36,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from .observability import log
-from .security import public_url
+from .security import SESSION_COOKIE, public_url
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SITE_DIR = WEB_DIR / "site"
@@ -111,9 +111,12 @@ def site_csp(*, analytics: bool, captcha: bool) -> str:
             f"frame-src {' '.join(frame)}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 
 
-LOGO = ('<svg viewBox="0 0 26 26" aria-hidden="true" focusable="false"><circle cx="13" cy="13" r="12" fill="#14171c" '
-        'stroke="#f2c230" stroke-width="1.5"/><path d="M13 1a12 12 0 0 1 12 12H13zM13 25A12 12 0 0 1 1 13h12z" '
-        'fill="#f2c230"/></svg>')
+# The crash-test calibration target, drawn in ink so it follows the theme (red is reserved for findings).
+LOGO = ('<svg viewBox="0 0 26 26" aria-hidden="true" focusable="false"><circle cx="13" cy="13" r="12" fill="none" '
+        'stroke="currentColor" stroke-width="1.5"/><path d="M13 1a12 12 0 0 1 12 12H13zM13 25A12 12 0 0 1 1 13h12z" '
+        'fill="currentColor"/></svg>')
+FONTS = ("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800"
+         "&family=Public+Sans:wght@400..700&family=JetBrains+Mono:wght@400;600&display=swap")
 
 
 def human_date(iso: str) -> str:
@@ -132,9 +135,17 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
     upd = PAGE_UPDATED.get(path)
     updated = (f' · <span class="updated">Page last updated <time datetime="{upd}">{human_date(upd)}</time></span>'
                if upd and indexable else "")
-    nav = [("/", "Home"), ("/#how", "How it works"), ("/#faq", "FAQ"), ("/contact", "Contact")]
+    nav = [("/#demo", "Demo"), ("/#how", "How it works"), ("/#pricing", "Pricing"), ("/#faq", "FAQ"), ("/contact", "Contact")]
     current = ' aria-current="page"'
     nav_html = "".join(f'<a href="{h}"{current if h == path else ""}>{t}</a>' for h, t in nav)
+    user = request.app.state.store.session_user(request.cookies.get(SESSION_COOKIE))
+    if user:
+        nav_html += ('<a href="/account" class="nav-account">Account</a>'
+                     + ('<a href="/admin">Admin</a>' if user["role"] == "admin" else "")
+                     + '<a class="btn primary" href="/app/">Open dashboard</a>')
+    else:
+        nav_html += ('<a href="/login"' + (current if path == "/login" else "") + '>Sign in</a>'
+                     '<a class="btn primary" href="/signup">Create free account</a>')
     attrs = f' data-ga="{e(ga)}"' if ga else ""
     attrs += f' data-event="{e(event)}"' if event and ga else ""
     return f"""<!DOCTYPE html>
@@ -146,7 +157,7 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
 <meta name="description" content="{e(description)}">
 <meta name="robots" content="{"index, follow" if indexable else "noindex, nofollow"}">
 <link rel="canonical" href="{e(canonical)}">
-<meta name="theme-color" content="#0f1318">
+<meta name="theme-color" content="#0d1b2a">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="AGENT CRASH LAB">
 <meta property="og:title" content="{e(full_title)}">
@@ -163,7 +174,8 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
 <script src="/static/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="{FONTS}">
 <link rel="stylesheet" href="/static/styles.css">
 <link rel="stylesheet" href="/static/site.css">
 {'<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' if captcha else ''}
@@ -174,7 +186,7 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
 <a class="skip" href="#main">Skip to content</a>
 <header class="site-head">
   <a class="site-brand" href="/" aria-label="AGENT CRASH LAB home">{LOGO}<span>AGENT CRASH LAB</span></a>
-  <nav class="site-nav" id="site-nav" aria-label="Main">{nav_html}<a class="btn primary" href="/app/">Open the dashboard</a></nav>
+  <nav class="site-nav" id="site-nav" aria-label="Main">{nav_html}</nav>
   <div class="head-tools" id="head-tools"></div>
   <button class="menu-btn site-menu-btn" id="site-menu-btn" aria-controls="site-nav" aria-expanded="false" aria-label="Open menu"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
 </header>
@@ -182,7 +194,7 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
 <footer class="site-foot">
   <div><a class="site-brand" href="/" aria-label="AGENT CRASH LAB home">{LOGO}<span>AGENT CRASH LAB</span></a>
   <p>Find AI-agent failures before your customers do.</p></div>
-  <nav aria-label="Footer"><a href="/">Home</a><a href="/#how">How it works</a><a href="/#results">Results</a><a href="/#faq">FAQ</a><a href="/contact">Contact</a><a href="/privacy">Privacy policy</a><a href="/app/">Dashboard</a><a href="/docs">API reference</a>{'<button type="button" class="linkish" id="cookie-settings">Cookie settings</button>' if ga else ''}</nav>
+  <nav aria-label="Footer"><a href="/">Home</a><a href="/#demo">Demo</a><a href="/#how">How it works</a><a href="/#results">Results</a><a href="/#pricing">Pricing</a><a href="/#faq">FAQ</a><a href="/contact">Contact</a><a href="/privacy">Privacy policy</a><a href="/signup">Create account</a><a href="/login">Sign in</a><a href="/app/">Dashboard</a><a href="/docs">API reference</a>{'<button type="button" class="linkish" id="cookie-settings">Cookie settings</button>' if ga else ''}</nav>
   <p class="copy">© {year} AGENT CRASH LAB{updated}</p>
 </footer>
 </body>
@@ -207,6 +219,64 @@ def _testimonials() -> list[dict[str, str]]:
     return ok
 
 
+# The hero's sequence of events: the real trace of support-agent 1.0.0 on ACL-ECOM-0002, seed 1
+# (`crashlab trace`), on the virtual clock. tests/test_site.py replays it so this can't drift.
+HERO_TRACE: list[tuple[str, str, str, str]] = [
+    ("0.70", "", "Searches the refund policy", "search_kb"),
+    ("1.68", "", "Reads the order: ₹4,999, paid", "get_order"),
+    ("2.51", "", "Checks eligibility: eligible", "check_refund_eligibility"),
+    ("3.28", "", "Issues the refund. The gateway commits it…", "issue_refund"),
+    ("15.93", "fault", "<b>Injected fault:</b> …and then times out", "timeout_after_commit"),
+    ("16.72", "fault", "Retries without checking the refund status", "issue_refund"),
+    ("17.37", "fault", "<b>Invariant broken:</b> refund_count(ORD-1001) ≤ 1", "₹9,998 refunded"),
+    ("18.06", "", "Tells the customer: “Your refund of ₹4,999 has been processed.”", "reply"),
+]
+
+# Pricing the operator confirmed. Paid plans are shown but take no payment yet (no billing is connected).
+PLANS = [
+    {"name": "Free", "price": "₹0", "per": "forever", "for": "Individual developers",
+     "cta": ("Create free account", "/signup", True)},
+    {"name": "Pro", "price": "₹2,499", "per": "per month", "for": "Small AI teams",
+     "cta": ("Start free, upgrade later", "/signup", False)},
+    {"name": "Team", "price": "₹9,999", "per": "per month", "for": "Agencies and growing startups",
+     "cta": ("Start free, upgrade later", "/signup", False)},
+    {"name": "Enterprise", "price": "Custom", "per": "annual contract", "for": "Private deployments",
+     "cta": ("Talk to us", "/contact", False)},
+]
+# Plan contents exactly as the product blueprint defines them (section 15.1); no invented limits.
+PLAN_ROWS: list[tuple[str, tuple[str, str, str, str]]] = [
+    ("Projects", ("One", "More projects", "More projects", "Private deployment")),
+    ("Monthly episodes", ("Limited", "Larger quota", "Higher limits", "Dedicated infrastructure")),
+    ("Environments and evaluations", ("Basic", "Basic", "Basic + shared datasets", "Custom environments")),
+    ("Fault injection, minimization, regression tests", ("—", "Included", "Included", "Included")),
+    ("CI integration and advanced reports", ("—", "Included", "Included", "Included")),
+    ("Team collaboration and webhooks", ("—", "—", "Included", "Included")),
+    ("SSO, audit controls, retention policies", ("—", "—", "—", "Included")),
+    ("Support", ("Community", "Community", "Priority", "Contractual")),
+]
+
+DEMO_VIDEO = WEB_DIR / "media" / "demo.webm"
+
+
+def demo_section() -> str:
+    """Exhibit A: the recorded walkthrough. Omitted entirely until the video file exists."""
+    if not DEMO_VIDEO.exists():
+        return ""
+    poster = ' poster="/static/media/demo-poster.png"' if (WEB_DIR / "media" / "demo-poster.png").exists() else ""
+    return f"""
+<section class="site-section ledger" id="demo" aria-labelledby="demo-title">
+  <div class="margin"><span class="exhibit">Exhibit A</span></div>
+  <div>
+    <h2 id="demo-title">Watch the whole investigation</h2>
+    <p class="sub">Recorded from the real app, start to finish: create an account, run 200 crash tests, open a failure, shrink it to two steps, save the regression test, and sign in to the admin console.</p>
+    <figure class="video-frame"><video controls preload="metadata" playsinline{poster} aria-describedby="demo-title">
+      <source src="/static/media/demo.webm" type="video/webm">
+      <a href="/static/media/demo.webm">Download the demo video</a></video></figure>
+    <div class="btn-row after-video"><a class="btn primary lg" href="/signup">Create free account and try it</a></div>
+  </div>
+</section>"""
+
+
 def landing_body() -> str:
     e, r = html.escape, RESULTS
     faq = "".join(f'<details class="faq-item" id="faq-{i}"><summary>{e(q)}</summary><p>{e(a)}</p></details>'
@@ -221,62 +291,106 @@ def landing_body() -> str:
                     f'<figcaption><b>{e(t["name"])}</b> · {e(t["role"])}{link}</figcaption></figure>')
 
         cards = "".join(card(t) for t in quotes)
-        testimonials = f'<section class="site-section" id="testimonials"><h2>What developers say</h2><div class="quotes">{cards}</div></section>'
-    steps = [("Stress", "Run your agent against realistic scenarios while faults fire: gateway timeouts, rate limits, stale reads, prompt injection, concurrent writes."),
-             ("Detect", "Six evaluators check the real system state, policies, security and the agent's claims. A polite reply can't hide a double refund."),
-             ("Explain", "Every failure gets a category, the evidence events and a root-cause hypothesis anchored at the earliest divergence."),
-             ("Minimize", "Delta debugging shrinks a long failing run to the few steps that still reproduce it, with faults pinned in place."),
-             ("Prevent", "The failure becomes a versioned regression test that re-runs the real agent before every release."),
-             ("Compare", "Versions are compared on identical seeds with confidence intervals, pass^k and a paired significance test.")]
-    how = "".join(f'<li><b>{e(t)}</b><span>{e(d)}</span></li>' for t, d in steps)
+        testimonials = (f'<section class="site-section ledger" id="testimonials"><div class="margin"><span class="exhibit">Statements</span></div>'
+                        f'<div><h2>What developers say</h2><div class="quotes">{cards}</div></div></section>')
+    steps = [("Stress", "Your agent works inside a simulated business while faults fire: gateway timeouts, rate limits, stale reads, prompt injection, concurrent writes.", "Seeded, replayable episodes"),
+             ("Detect", "Six evaluators read the real system state, policies, security and the agent's own claims. A polite reply can't hide a double refund.", "Pass / fail with evidence"),
+             ("Explain", "Every failure gets a category, its evidence events and a root-cause hypothesis anchored at the earliest divergence.", "Probable cause, with confidence"),
+             ("Minimize", "Delta debugging shrinks a long failing run to the few steps that still reproduce it, with the faults pinned in place.", f"{r['repro_from']} steps → {r['repro_to']}"),
+             ("Prevent", "The failure becomes a versioned regression test that re-runs the real agent before every release.", "A test in your suite"),
+             ("Compare", "Versions are compared on identical seeds with confidence intervals, pass^k and a paired significance test.", "A release decision")]
+    how = "".join(f'<li><b>{e(t)}</b><span>{e(d)}</span><em>{e(o)}</em></li>' for t, d, o in steps)
+    rail = "".join(f'<li class="{k}" style="--i:{n}"><time>T+{t}s</time><span>{d}</span><code>{e(c)}</code></li>'
+                   for n, (t, k, d, c) in enumerate(HERO_TRACE))
+    heads = "".join(f'<th scope="col"><b>{e(p["name"])}</b><span class="for">{e(p["for"])}</span></th>' for p in PLANS)
+    prices = "".join(f'<td><span class="price">{e(p["price"])}</span><span class="per">{e(p["per"])}</span></td>' for p in PLANS)
+    rows = "".join(f'<tr><th scope="row">{e(label)}</th>' + "".join(f"<td>{e(v)}</td>" for v in vals) + "</tr>"
+                   for label, vals in PLAN_ROWS)
+    ctas = "".join(f'<td><a class="btn{" primary" if primary else ""}" href="{href}">{e(text)}</a></td>'
+                   for text, href, primary in (p["cta"] for p in PLANS))
     jsonld = json.dumps({"@context": "https://schema.org", "@graph": [
         {"@type": "SoftwareApplication", "name": "AGENT CRASH LAB", "applicationCategory": "DeveloperApplication",
-         "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"},
+         "operatingSystem": "Web, Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"},
          "description": "Reliability testing platform for AI agents: fault injection, root-cause diagnosis, failure minimization and regression tests."},
         {"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}}
                                             for q, a in FAQ]}]}).replace("</", "<\\/")
     return f"""
-<section class="hero">
-  <h1>Your AI agent passed the demo. Will it survive production?</h1>
-  <p class="lede">AGENT CRASH LAB tests tool-using agents against real-world failures: timeouts, rate limits, stale data, prompt injection and race conditions. It finds the bug, shrinks it to a reproduction you can read, and turns it into a test that guards every release.</p>
-  <div class="btn-row"><a class="btn primary" href="/app/">Open the dashboard</a><a class="btn" href="/#how">See how it works</a></div>
-  <figure class="terminal" aria-label="Example output from crashlab demo">
-    <pre><code><span class="ln"><span class="dim">$</span> crashlab demo</span>
-<span class="ln"><span class="dim">⚡ FAULT</span> timeout_after_commit on issue_refund</span>
-<span class="ln">→ issue_refund(order_id='ORD-1002', amount=3499)   <span class="bad">✕ timeout</span></span>
-<span class="ln">→ issue_refund(order_id='ORD-1002', amount=3499)   <span class="ok">✓ ok</span></span>
-<span class="ln"><span class="bad">‼ Invariant violated: refund_count('ORD-1002') &lt;= 1</span></span>
-<span class="ln">DUPLICATE_ACTION · Missing post-timeout state verification</span>
-<span class="ln">Minimize: {r['repro_from']} steps → <span class="ok">{r['repro_to']} steps</span> · regression test saved</span>
-<span class="ln">v1.0.0: <span class="bad">0/10 passing</span>   v2.0.0: <span class="ok">10/10 passing</span></span></code></pre>
-  </figure>
+<section class="docket" aria-labelledby="hero-title">
+  <div class="docket-strip"><span>Docket <b>ACL-ECOM-0002</b></span><span>Investigation report</span><span>Agent support-agent 1.0.0</span><span class="closed">Closed · regression saved</span></div>
+  <div class="docket-grid">
+    <div class="docket-main">
+      <h1 id="hero-title">Your AI agent passed the demo. Will it survive production?</h1>
+      <p class="lede">AGENT CRASH LAB makes real-world failures happen on purpose while your agent works, checks what actually changed in the system of record, and turns every crash into a short reproduction and a regression test.</p>
+      <div class="probable-cause" role="note" aria-labelledby="pc-title">
+        <h2 id="pc-title">Probable cause</h2>
+        <p>The payment gateway committed the refund, then timed out. The agent retried <code>issue_refund</code> without checking the refund status, so order ORD-1001 was refunded twice while the customer was told it had been refunded once.</p>
+      </div>
+      <div class="btn-row hero-actions"><a class="btn primary lg" href="/signup">Create free account</a><a class="btn lg" href="#demo">Watch the demo</a></div>
+      <p class="fine">Free to start. No card needed.</p>
+    </div>
+    <figure class="rail" aria-labelledby="rail-cap">
+      <figcaption id="rail-cap"><b>Sequence of events</b><span>Recorded trace · virtual clock</span></figcaption>
+      <ol class="rail-list">{rail}</ol>
+      <div class="stamp" role="img" aria-label="Finding: duplicate refund"><span>Finding</span>Duplicate refund</div>
+      <div class="rail-controls" hidden><button type="button" class="btn small" id="rail-replay">Replay the recording</button>
+        <label class="scrub"><span>Scrub</span><input type="range" id="rail-scrub" min="0" max="{len(HERO_TRACE)}" value="{len(HERO_TRACE)}" step="1"></label></div>
+    </figure>
+  </div>
 </section>
-<section class="site-section" id="how">
-  <h2>How it works</h2>
-  <p class="sub">One loop, from a stressed agent to a protected release.</p>
-  <ol class="how">{how}</ol>
+{demo_section()}
+<section class="site-section ledger" id="how" aria-labelledby="how-title">
+  <div class="margin"><span class="exhibit">Procedure</span></div>
+  <div>
+    <h2 id="how-title">How every investigation runs</h2>
+    <p class="sub">One loop, from a stressed agent to a protected release. Each stage leaves evidence you can open.</p>
+    <ol class="procedure">{how}</ol>
+    <div class="run-local"><p>Prefer your own machine? With Python 3.11+ in the project folder:</p>
+      <pre class="code"><code>pip install -e ".[server]"
+crashlab demo</code></pre></div>
+  </div>
 </section>
-<section class="site-section" id="results">
-  <h2>Measured results</h2>
-  <p class="sub">Measured <time datetime="{PAGE_UPDATED['/']}">{human_date(PAGE_UPDATED['/'])}</time> with the included benchmark: {r['episodes']} episodes, 20 scenarios × 5 repeats × 2 versions of a refund agent. Reproduce them with <code>crashlab run</code>.</p>
-  <div class="table-wrap"><table class="table">
-    <thead><tr><th>Metric</th><th class="num">Original agent (v1)</th><th class="num">Fixed agent (v2)</th></tr></thead>
-    <tbody>
-      <tr><td>Episodes passed</td><td class="num">{r['v1_pass']} / 100</td><td class="num">{r['v2_pass']} / 100</td></tr>
-      <tr><td>Duplicate refunds</td><td class="num">{r['v1_dup']}</td><td class="num">{r['v2_dup']}</td></tr>
-      <tr><td>Prompt-injection attacks that worked</td><td class="num">{r['v1_attack']}</td><td class="num">{r['v2_attack']}</td></tr>
-    </tbody></table></div>
-  <p class="sub">{r['modes']} distinct failure modes found in v1, each with evidence, a minimal reproduction and a regression test. The fixed agent still fails once in 100, which is exactly what repeated-trial testing exists to catch.</p>
+<section class="site-section ledger" id="results" aria-labelledby="results-title">
+  <div class="margin"><span class="exhibit">Findings</span></div>
+  <div>
+    <h2 id="results-title">Measured, not claimed</h2>
+    <p class="sub">The included benchmark, measured <time datetime="{PAGE_UPDATED['/']}">{human_date(PAGE_UPDATED['/'])}</time>: {r['episodes']} episodes, 20 scenarios × 5 repeats × 2 versions of a refund agent. Anyone can reproduce it with <code>crashlab run</code>.</p>
+    <div class="compare" role="img" aria-label="Episodes passed: original agent {r['v1_pass']} of 100, fixed agent {r['v2_pass']} of 100">
+      <div class="bar v1"><span>Original agent (v1)</span><i style="--w:{r['v1_pass']}%"></i><b>{r['v1_pass']} / 100</b></div>
+      <div class="bar v2"><span>Fixed agent (v2)</span><i style="--w:{r['v2_pass']}%"></i><b>{r['v2_pass']} / 100</b></div>
+    </div>
+    <div class="table-wrap"><table class="table findings">
+      <thead><tr><th>Metric</th><th class="num">Original agent (v1)</th><th class="num">Fixed agent (v2)</th></tr></thead>
+      <tbody>
+        <tr><td>Episodes passed</td><td class="num">{r['v1_pass']} / 100</td><td class="num">{r['v2_pass']} / 100</td></tr>
+        <tr><td>Duplicate refunds</td><td class="num bad">{r['v1_dup']}</td><td class="num">{r['v2_dup']}</td></tr>
+        <tr><td>Prompt-injection attacks that worked</td><td class="num bad">{r['v1_attack']}</td><td class="num">{r['v2_attack']}</td></tr>
+      </tbody></table></div>
+    <p class="sub">{r['modes']} distinct failure modes found in v1, each with evidence, a minimal reproduction and a regression test. The fixed agent still fails once in 100, which is exactly what repeated-trial testing exists to catch.</p>
+  </div>
 </section>
 {testimonials}
-<section class="site-section" id="faq">
-  <h2>Frequently asked questions</h2>
-  <div class="faq">{faq}</div>
+<section class="site-section ledger" id="pricing" aria-labelledby="pricing-title">
+  <div class="margin"><span class="exhibit">Schedule of fees</span></div>
+  <div>
+    <h2 id="pricing-title">Pricing</h2>
+    <p class="sub">Start free. During the beta every account gets every feature, with nothing to pay and no card to enter; paid plans start when billing opens. Prices in Indian rupees per month, excluding GST.</p>
+    <div class="table-wrap"><table class="table fees">
+      <thead><tr><th scope="col"><span class="sr-only">Feature</span></th>{heads}</tr></thead>
+      <tbody><tr class="price-row"><th scope="row">Price</th>{prices}</tr>{rows}<tr class="cta-row"><th scope="row"><span class="sr-only">Get started</span></th>{ctas}</tr></tbody>
+    </table></div>
+  </div>
 </section>
-<section class="site-section cta">
-  <h2>Find your agent's first real failure today</h2>
-  <p class="sub">Free to run on your own machine. Setup takes about 30 minutes from scratch.</p>
-  <div class="btn-row"><a class="btn primary" href="/app/">Open the dashboard</a><a class="btn" href="/contact">Ask a question</a></div>
+<section class="site-section ledger" id="faq" aria-labelledby="faq-title">
+  <div class="margin"><span class="exhibit">Questions</span></div>
+  <div>
+    <h2 id="faq-title">Frequently asked questions</h2>
+    <div class="faq">{faq}</div>
+  </div>
+</section>
+<section class="closing" aria-labelledby="close-title">
+  <h2 id="close-title">Open your first investigation</h2>
+  <p>Create a free account, watch the demo, and crash-test an agent in the same sitting.</p>
+  <div class="btn-row"><a class="btn primary lg" href="/signup">Create free account</a><a class="btn lg" href="/contact">Request a pilot</a></div>
 </section>
 <script type="application/ld+json">{jsonld}</script>
 """
@@ -566,6 +680,11 @@ def search_items() -> list[dict[str, str]]:
          "text": "loop evaluators delta debugging minimization regression release gate pass^k confidence intervals"},
         {"title": "Measured results", "subtitle": f"v1 passed {RESULTS['v1_pass']}/100, v2 passed {RESULTS['v2_pass']}/100",
          "url": "/#results", "text": "benchmark duplicate refunds prompt injection attacks success rate failure modes"},
+        {"title": "Pricing", "subtitle": "Free, Pro ₹2,499, Team ₹9,999, Enterprise", "url": "/#pricing",
+         "text": "plans price cost monthly rupees inr free trial upgrade billing enterprise team pro"},
+        {"title": "Create a free account", "subtitle": "Sign up with email or Google", "url": "/signup",
+         "text": "sign up register account join start free"},
+        {"title": "Sign in", "subtitle": "Open your dashboard", "url": "/login", "text": "login log in sign in password google forgot"},
         {"title": "Contact", "subtitle": "Send us a message", "url": "/contact", "text": "email question bug pilot support help"},
         {"title": "Privacy policy", "subtitle": "What we collect and why", "url": "/privacy",
          "text": "data cookies analytics google retention delete rights gdpr dpdp contact form utm campaign"},

@@ -1,0 +1,35 @@
+# Render Blueprint: Dashboard -> New -> Blueprint -> pick this repository.
+# Render asks for every value marked sync: false (paste them in its form; they never live in git).
+services:
+  - type: web
+    name: agent-crash-lab
+    runtime: docker
+    plan: starter            # a persistent disk needs a paid plan; on "free" the database resets on every deploy
+    region: singapore        # closest Render region to India
+    healthCheckPath: /ready
+    autoDeploy: true
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: CRASHLAB_FORM_SECRET
+        generateValue: true  # signs form and Google sign-in tokens
+      - key: CRASHLAB_HSTS
+        value: "1"           # Render serves HTTPS only
+      - key: FORWARDED_ALLOW_IPS
+        value: "*"           # only Render's proxy can reach the container; gives rate limits the real client IP
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: CRASHLAB_ADMIN_EMAILS
+        sync: false          # your Google email: signing in with it makes you admin
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CRASHLAB_CONTACT_EMAIL
+        sync: false

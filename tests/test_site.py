@@ -347,7 +347,7 @@ def test_theme_script_runs_before_styles(site):
     assert html.index('src="/static/theme.js"') < html.index('href="/static/styles.css"')
     assert 'src="/static/theme.js" defer' not in html and 'src="/static/theme.js" async' not in html
     css = (ROOT / "web" / "styles.css").read_text()
-    assert ':root[data-theme="light"]' in css and "@media print" in css
+    assert ':root[data-theme="dark"]' in css and "@media print" in css
 
 
 def test_last_updated_dates(site):

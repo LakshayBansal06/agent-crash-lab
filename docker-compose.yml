@@ -7,6 +7,7 @@ services:
   crashlab:
     build: .
     ports: ["127.0.0.1:8000:8000"]   # never exposed directly; Caddy is the only public entry point
+    user: crashlab
     env_file: [.env]
     environment: { CRASHLAB_AUTH: required }
     volumes: ["crashlab-data:/data"]

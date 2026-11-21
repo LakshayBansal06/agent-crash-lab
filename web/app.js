@@ -73,6 +73,12 @@
     return () => ctrl.abort();
   }
 
+  // Signed out: people go to the sign-in page; scripts that connected with an API key get the key form again.
+  function signedOut(message) {
+    if (getKey()) { keyForm(message); return; }
+    location.href = "/login?m=expired&next=" + encodeURIComponent("/app/" + location.hash);
+  }
+
   function keyForm(message) {
     crumbs(["Sign in"]);
     $("#nav").innerHTML = "";
@@ -117,7 +123,7 @@
       if (m) success(m);
       return r;
     } catch (e) {
-      if (e instanceof AuthError) { keyForm("Your API key expired or was revoked."); return undefined; }
+      if (e instanceof AuthError) { signedOut("Your API key expired or was revoked."); return undefined; }
       failure(friendly(e));
       return undefined;
     } finally {
@@ -190,6 +196,7 @@
       S.regressions = S.exp.regressions || []; S.validation = STATIC.validation || {};
     } else {
       try {
+        S.me = await api("/whoami");
         S.scenarios = await api("/scenarios");
         const list = await api("/experiments");
         const done = list.find((e) => e.status === "COMPLETED");
@@ -197,7 +204,7 @@
         S.regressions = await api("/regressions");
         try { S.regRun = await api("/regression-suites/default/latest"); } catch (_) { S.regRun = null; }
       } catch (e) {
-        if (e instanceof AuthError) { keyForm("This server requires an API key."); return; }
+        if (e instanceof AuthError) { signedOut("This server requires an API key."); return; }
         $("#page").innerHTML = `<div class="empty"><h3>Can't reach the Crash Lab API</h3><p>${esc(e.message)}. Start it with <code>crashlab serve</code>.</p></div>`;
         return;
       }
@@ -213,7 +220,20 @@
         const tools = $("#top-tools");
         tools.innerHTML = "";
         tools.append(UI.searchButton(() => UI.openSearch(searchItems, { placeholder: "Search pages, scenarios, failures, runs", onGo: (u) => (location.hash = u) })), UI.themeButton());
-        if (S.mode === "api" && getKey()) {
+        if (S.mode === "api" && S.me && S.me.user) {
+          const u = S.me.user;
+          const acct = document.createElement("a");
+          acct.className = "account-chip"; acct.href = "/account";
+          acct.title = `${u.name} (${u.email})`;
+          acct.innerHTML = `<span class="avatar" aria-hidden="true">${esc(u.name.slice(0, 1).toUpperCase())}</span><span class="account-name">${esc(u.name)}</span>`;
+          acct.setAttribute("aria-label", `Your account: ${u.name}`);
+          tools.append(acct);
+          if (u.role === "admin") {
+            const adm = document.createElement("a");
+            adm.className = "icon-btn"; adm.href = "/admin"; adm.textContent = "Admin";
+            tools.append(adm);
+          }
+        } else if (S.mode === "api" && getKey()) {
           const out = document.createElement("button");
           out.type = "button"; out.className = "icon-btn"; out.textContent = "Sign out";
           out.addEventListener("click", async () => {
@@ -292,7 +312,7 @@
         <i class="h"></i><i style="width:80%"></i><i style="width:62%"></i><i class="box"></i><i style="width:70%"></i></div>`;
       await fn(page, id, new URLSearchParams(query || ""));
     } catch (e) {
-      if (e instanceof AuthError) { keyForm("Your API key expired or was revoked."); return; }
+      if (e instanceof AuthError) { signedOut("Your API key expired or was revoked."); return; }
       if (e instanceof NotFound) { VIEWS.notfound(page, e.message); return; }
       console.error(e);
       setMeta("Error", null);
@@ -467,7 +487,7 @@
     page.innerHTML = `
       <h1 class="verdict">${verdict}</h1>
       <p class="lede">${S.exp.config.scenario_ids.length} scenarios, each run ${S.exp.config.repeats} times with seeded fault injection${S.exp.created_at ? `, on <time datetime="${esc(S.exp.created_at)}">${esc(new Date(S.exp.created_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }))}</time>` : ""}.
-        Every cell below is one episode; a yellow foot marks an episode where a fault fired. Select any cell to open its trace.</p>
+        Every cell below is one episode; a dark foot marks an episode where a fault fired. Select any cell to open its trace.</p>
       <div class="wall" id="wall"></div>
       <section class="section">
         <div class="section-head"><div><h2>The reliability loop for this experiment</h2>

@@ -41,6 +41,7 @@
     }
     UI.floaters(contact);
     UI.enhanceCode();
+    UI.enhancePasswords();
   }
 
   // ---- FAQ: open the question a link or search result points to; expand / collapse all
@@ -66,11 +67,45 @@
     faq.parentNode.insertBefore(tools, faq);
   }
 
-  // ---- one orchestrated entrance: the hero terminal plays its lines once
-  const term = document.querySelector(".terminal");
-  if (term && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    term.querySelectorAll(".ln").forEach((l, i) => (l.style.animationDelay = `${120 + i * 110}ms`));
-    term.classList.add("play");
+  // ---- the one authored moment: the sequence of events plays back like a flight recorder.
+  // Rows are visible in the HTML; script only arms and plays them, so a failed script hides nothing.
+  const rail = document.querySelector(".rail");
+  if (rail) {
+    const rows = [...rail.querySelectorAll(".rail-list li")];
+    const controls = rail.querySelector(".rail-controls");
+    const scrub = rail.querySelector("#rail-scrub");
+    const replay = rail.querySelector("#rail-replay");
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const show = (n) => {  // scrub to the first n entries of the record
+      rail.classList.remove("armed", "playing");
+      rail.classList.add("scrubbing");
+      rows.forEach((r, i) => r.classList.toggle("off", i >= n));
+      rail.classList.toggle("complete", n >= rows.length);
+      scrub.value = String(n);
+    };
+    const play = () => {
+      if (reduced) { show(rows.length); return; }
+      rail.classList.remove("scrubbing", "complete", "playing");
+      rows.forEach((r) => r.classList.remove("off"));
+      rail.classList.add("armed");
+      void rail.offsetWidth;  // restart the CSS animations
+      rail.classList.add("playing");
+      scrub.value = String(rows.length);
+    };
+    controls.hidden = false;
+    scrub.addEventListener("input", () => show(Number(scrub.value)));
+    replay.addEventListener("click", play);
+    if (!reduced && "IntersectionObserver" in window) {
+      rail.classList.add("armed");
+      const io = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) { io.disconnect(); play(); } }, { threshold: 0.35 });
+      io.observe(rail);
+    }
+  }
+  // the findings bars draw once, when they are read
+  const compare = document.querySelector(".compare");
+  if (compare && !matchMedia("(prefers-reduced-motion: reduce)").matches && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((es) => { if (es.some((x) => x.isIntersecting)) { io.disconnect(); compare.classList.add("play"); } }, { threshold: 0.5 });
+    io.observe(compare);
   }
 
   // ---- UTM tags: keep the campaign that brought the visitor (this tab only), then tidy the URL

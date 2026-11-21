@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from .experiment import run_experiment, run_regressions
 from .scenarios import load_scenarios, validate_scenario
@@ -30,6 +31,8 @@ def render(payload: dict[str, Any]) -> str:
     theme = (WEB / "theme.js").read_text()
     data = json.dumps(payload, default=str, separators=(",", ":")).replace("</", "<\\/")
     html = html.replace('<link rel="stylesheet" href="/static/styles.css">', f"<style>\n{css}\n</style>")
+    icon = "data:image/svg+xml," + quote((WEB / "favicon.svg").read_text().strip())  # no server to serve /favicon.ico
+    html = html.replace('href="/favicon.ico"', f'href="{icon}"')
     html = html.replace('<script src="/static/theme.js"></script>', f"<script>\n{theme}\n</script>")
     html = html.replace('<script src="/static/ui.js"></script>', f"<script>\n{ui}\n</script>")
     html = html.replace('<script src="/static/app.js"></script>',

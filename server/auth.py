@@ -118,9 +118,8 @@ def field(name: str, label: str, control: str, errors: dict[str, str], hint: str
 
 
 def pw_input(name: str, autocomplete: str) -> str:
-    return (f'<div class="pw-wrap"><input id="{name}" name="{name}" type="password" autocomplete="{autocomplete}" required '
-            f'maxlength="200"{{aria}}><button type="button" class="pw-toggle" data-pw="{name}" aria-label="Show password" '
-            f'aria-pressed="false">Show</button></div>')
+    # site.js adds the show/hide button (shared with the dashboard's key field)
+    return f'<input id="{name}" name="{name}" type="password" autocomplete="{autocomplete}" required maxlength="200"{{aria}}>'
 
 
 def notice(kind: str, text: str) -> str:
@@ -129,13 +128,21 @@ def notice(kind: str, text: str) -> str:
 
 
 def auth_card(*, title: str, lede: str, body: str, foot: str = "", admin: bool = False) -> str:
-    badge = '<span class="auth-badge">Admin console</span>' if admin else ""
+    # The cover of a case file: real findings from the included benchmark, never invented proof.
+    access = "Restricted · admin console" if admin else "Case files · sign in to open"
     return f"""
 <section class="auth-shell{' admin' if admin else ''}">
-  <div class="auth-art" aria-hidden="true"><div class="auth-orbit"></div><div class="auth-grid"></div>
-    <div class="auth-quote"><span class="auth-mark">{LOGO}</span><p>Your agent passed the demo.<br><b>Will it survive production?</b></p></div></div>
+  <aside class="case-cover" aria-label="About AGENT CRASH LAB">
+    <div class="cover-strip"><span class="cover-mark">{LOGO}</span><span>{access}</span></div>
+    <p class="cover-quote">Your agent passed the demo. <b>Will it survive production?</b></p>
+    <dl class="cover-findings">
+      <div><dt>Duplicate refunds</dt><dd>15% <span>→</span> 0%</dd></div>
+      <div><dt>Prompt injections that worked</dt><dd>75% <span>→</span> 0%</dd></div>
+      <div><dt>Failing run, minimized</dt><dd>8 steps <span>→</span> 2</dd></div>
+    </dl>
+    <p class="cover-note">Measured on the included benchmark: reference agent v1 against the fixed v2, 200 episodes.</p>
+  </aside>
   <div class="auth-card">
-    {badge}
     <h1>{title}</h1>
     <p class="lede">{lede}</p>
     {body}
@@ -490,7 +497,7 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
         stats = [("Users", len(users)), ("Admins", sum(u["role"] == "admin" for u in users)),
                  ("Experiments", counts.get("experiments", 0)), ("Episodes", counts.get("runs", 0)),
                  ("Failures found", counts.get("failures", 0)), ("Contact messages", counts.get("contact_messages", 0))]
-        tiles = "".join(f'<div class="stat-tile"><span>{k}</span><b>{v:,}</b></div>' for k, v in stats)
+        tiles = "".join(f'<div><dt>{k}</dt><dd>{v:,}</dd></div>' for k, v in stats)
 
         def actions(u: dict[str, Any]) -> str:
             if u["id"] == me["id"]:
@@ -515,11 +522,12 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
                      f'<pre class="code-copy"><code>{e(link)}</code></pre></div>') if link else ""
         return f"""
 <section class="admin">
-  <header class="admin-head"><div><span class="auth-badge">Admin console</span><h1>Platform overview</h1>
-    <p class="sub">Signed in as {e(me["email"])}</p></div>
+  <div class="docket-strip"><span>Admin console</span><span>Signed in as {e(me["email"])}</span></div>
+  <header class="admin-head"><div><h1>Platform overview</h1>
+    <p class="sub">Every account, its access, and what visitors sent you.</p></div>
     <div class="btn-row"><a class="btn" href="/app/">Dashboard</a><a class="btn" href="/docs">API reference</a></div></header>
   {notice("success", e(flash))}{link_html}
-  <div class="stat-tiles">{tiles}</div>
+  <dl class="register" aria-label="Platform totals">{tiles}</dl>
   <div class="panel"><div class="panel-pad"><h2>Users</h2><p class="sub">Each user has a private project. Disabling signs them out everywhere.</p></div>
     <div class="table-wrap"><table class="table"><thead><tr><th>User</th><th>Role</th><th>Sign-in</th><th>Last sign-in</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr></thead>
     <tbody>{rows or '<tr><td colspan="6">No users yet.</td></tr>'}</tbody></table></div></div>
