@@ -26,18 +26,43 @@ Side-effecting tools (refunds, cancellations, address changes) must not be repea
 verify first. When you are finished, reply to the customer in plain text describing only what actually happened."""
 
 Transport = Callable[[dict[str, Any]], dict[str, Any]]
+RETRY_STATUS = {408, 429, 500, 502, 503, 504, 529}  # provider overloaded or briefly down: not the agent's fault
+
+
+def post_with_retry(url: str, body: dict[str, Any], headers: dict[str, str], *, attempts: int = 5,
+                    sleep: Callable[[float], None] | None = None, post: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """POST to a model API, retrying transient failures with exponential backoff (honouring Retry-After).
+    A model provider's hiccup must not be scored as a failure of the agent under test."""
+    import time
+
+    import httpx
+
+    sleep = sleep or time.sleep
+    post = post or httpx.post
+    for attempt in range(attempts):
+        try:
+            r = post(url, json=body, timeout=60, headers=headers)
+        except (httpx.TimeoutException, httpx.TransportError):
+            if attempt == attempts - 1:
+                raise
+        else:
+            if r.status_code not in RETRY_STATUS or attempt == attempts - 1:
+                r.raise_for_status()
+                return r.json()
+            wait = r.headers.get("retry-after", "")
+            if wait.isdigit():
+                sleep(min(float(wait), 30.0))
+                continue
+        sleep(min(2.0 ** attempt, 20.0))
+    raise RuntimeError("unreachable")
 
 
 def _http_transport(body: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover - needs network
-    import httpx
-
-    r = httpx.post(API_URL, json=body, timeout=60, headers={
+    return post_with_retry(API_URL, body, {
         "x-api-key": os.environ["ANTHROPIC_API_KEY"],
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
     })
-    r.raise_for_status()
-    return r.json()
 
 
 class LLMToolAgent(Agent):
@@ -90,12 +115,8 @@ GEMINI_DEFAULT_MODEL = "gemini-3.8-flash"
 
 
 def _gemini_transport(model: str, body: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover - needs network
-    import httpx
-
-    r = httpx.post(GEMINI_URL.format(model=model), json=body, timeout=60, headers={
+    return post_with_retry(GEMINI_URL.format(model=model), body, {
         "x-goog-api-key": os.environ["GEMINI_API_KEY"], "content-type": "application/json"})
-    r.raise_for_status()
-    return r.json()
 
 
 def _gemini_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -61,6 +61,25 @@ def test_llm_agent_loop_with_fake_transport():
     assert any(t["name"] == "issue_refund" for t in sent[0]["tools"])
 
 
+def test_model_calls_retry_transient_provider_errors():
+    import httpx
+
+    from crashlab.agents.llm import post_with_retry
+
+    req = httpx.Request("POST", "https://api.example")
+    replies = iter([httpx.Response(503, request=req), httpx.Response(429, headers={"retry-after": "2"}, request=req),
+                    httpx.Response(200, json={"ok": True}, request=req)])
+    slept = []
+    out = post_with_retry("https://api.example", {}, {}, sleep=slept.append, post=lambda *a, **k: next(replies))
+    assert out == {"ok": True} and slept == [1.0, 2.0]  # backoff, then the server's Retry-After
+    bad = iter([httpx.Response(400, request=req)])
+    try:
+        post_with_retry("https://api.example", {}, {}, sleep=slept.append, post=lambda *a, **k: next(bad))
+        raise AssertionError("a 400 must not be retried")
+    except httpx.HTTPStatusError:
+        pass
+
+
 def test_model_agents_refuse_to_run_without_a_key(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert main(["--db", str(tmp_path / "k.db"), "run", "--agents", "gemini", "--repeats", "1", "--quiet"]) == 2
