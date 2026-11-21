@@ -427,7 +427,9 @@ pre.code {
 .fab svg { width: 18px; height: 18px; }
 .fab.primary { background: var(--signal); color: var(--on-signal); border-color: var(--signal); }
 .fab.to-top { padding: 0; justify-content: center; }
-.fab[hidden] { display: none; }
+/* The HTML `hidden` attribute must always win over component `display` rules
+   (e.g. .btn's inline-flex), or "hidden" buttons like Cancel stay on screen. */
+[hidden] { display: none !important; }
 body.consent-open .floaters { display: none; }
 
 /* copy buttons on code */

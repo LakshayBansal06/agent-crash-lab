@@ -547,10 +547,12 @@ def create_app(db_path: str | None = None) -> FastAPI:
         return res
 
     @app.get(f"{API}/regression-suites/default/latest")
-    def latest_regression_run(p: Principal = requires("read")) -> dict[str, Any]:
+    def latest_regression_run(p: Principal = requires("read")) -> Any:
+        # "No suite has run yet" is a normal state on a fresh install, not an error:
+        # answer 204 so browsers don't log a failed request on every dashboard load.
         r = store.latest_regression_run(p.project_id)
         if not r:
-            raise HTTPException(404, "not found")
+            return Response(status_code=204)
         return r
 
     # ------------------------------------------------------- contact messages

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "crashlab",
+      "runtimeExecutable": ".venv/Scripts/crashlab.exe",
+      "runtimeArgs": ["serve", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

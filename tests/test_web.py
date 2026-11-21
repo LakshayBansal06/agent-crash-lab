@@ -53,3 +53,10 @@ def test_every_view_sets_a_title():
     views = set(re.findall(r"VIEWS\.(\w+) = ", js)) - {"notfound"}
     titled = set(re.findall(r"^\s{4}(\w+): \[\"", js, re.M))
     assert views <= titled, views - titled
+
+
+def test_hidden_attribute_always_hides():
+    # Buttons use display:inline-flex; without this rule `el.hidden = true` left
+    # "Cancel experiment" on screen after a run finished.
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+    assert re.search(r"\[hidden\]\s*\{\s*display:\s*none\s*!important", css)

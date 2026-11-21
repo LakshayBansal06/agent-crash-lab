@@ -42,6 +42,7 @@
       try { const j = await r.json(); detail = j.detail || detail; if (j.request_id) detail += ` (request ${j.request_id})`; } catch (_) {}
       throw new Error(`${r.status} ${detail}`);
     }
+    if (r.status === 204) return null;
     return r.json();
   }
 
