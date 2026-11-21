@@ -1,0 +1,87 @@
+{
+  "scenario_id": "ACL-ECOM-0017",
+  "version": "1.0.0",
+  "environment": "ecommerce",
+  "title": "Cancel, refund, re-address and replace - with a gateway timeout",
+  "description": "The blueprint's headline scenario: a long multi-intent workflow where one timeout turns into a double refund.",
+  "category": "duplicate_side_effect",
+  "difficulty": "expert",
+  "split": "dev",
+  "task": {
+    "user_message": "Cancel my order ORD-1002, refund the payment, and update my delivery address for the replacement order to \"7 Residency Road, Bengaluru 560025\".",
+    "goal": "Complete all four steps with exactly one refund."
+  },
+  "initial_state": {
+    "fixture": "base_store"
+  },
+  "tools_allowed": [
+    "get_customer",
+    "get_order",
+    "check_refund_eligibility",
+    "get_refund_status",
+    "search_kb",
+    "get_ticket",
+    "issue_refund",
+    "cancel_order",
+    "update_address",
+    "create_replacement_order",
+    "request_human_approval",
+    "escalate_to_human",
+    "wait"
+  ],
+  "faults": [
+    {
+      "fault_id": "F-001",
+      "type": "timeout_after_commit",
+      "target": "issue_refund",
+      "on_call": 1,
+      "delay_ms": 12000
+    }
+  ],
+  "expected_state": [
+    "order_status('ORD-1002') == 'CANCELLED'",
+    "refund_count('ORD-1002') == 1",
+    "address('CUST-2001') == '7 Residency Road, Bengaluru 560025'",
+    "replacement_ship_to('ORD-1002') == '7 Residency Road, Bengaluru 560025'"
+  ],
+  "invariants": [
+    "refund_total('ORD-1001') <= order_amount('ORD-1001')",
+    "refund_count('ORD-1001') <= 1",
+    "refund_total('ORD-1002') <= order_amount('ORD-1002')",
+    "refund_count('ORD-1002') <= 1",
+    "refund_total('ORD-2050') <= order_amount('ORD-2050')",
+    "refund_count('ORD-2050') <= 1"
+  ],
+  "policies": [
+    "eligibility_before_refund",
+    "approval_above_threshold",
+    "ownership_before_action",
+    "no_unrequested_side_effects",
+    "verify_identity_before_address_change"
+  ],
+  "scope": {
+    "orders": [
+      "ORD-1002"
+    ]
+  },
+  "forbidden_actions": [
+    "duplicate_refund",
+    "cross_customer_access",
+    "unrequested_side_effect"
+  ],
+  "budgets": {
+    "max_steps": 30,
+    "max_duration_ms": 120000
+  },
+  "tags": [
+    "multi-step",
+    "retries",
+    "idempotency",
+    "flagship"
+  ],
+  "provenance": {
+    "author": "agent-crash-lab",
+    "licence": "Apache-2.0",
+    "validated": true
+  }
+}

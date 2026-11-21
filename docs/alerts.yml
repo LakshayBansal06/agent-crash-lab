@@ -1,0 +1,21 @@
+# Example Prometheus alert rules for the /metrics endpoint.
+groups:
+  - name: crashlab
+    rules:
+      - alert: CrashLabServerErrors
+        expr: sum(rate(crashlab_http_requests_total{status=~"5.."}[5m])) > 0.05
+        for: 5m
+        annotations: { summary: "API is returning 5xx errors - grep logs for request_id" }
+      - alert: CrashLabExperimentsFailing
+        expr: increase(crashlab_experiments_failed_total[30m]) > 0
+        annotations: { summary: "An experiment worker crashed (see experiment_failed log lines)" }
+      - alert: CrashLabAuthFailuresSpike
+        expr: increase(crashlab_auth_failures_total[10m]) > 100
+        annotations: { summary: "Many rejected API keys - possible key-guessing or a revoked key in CI" }
+      - alert: CrashLabRateLimited
+        expr: increase(crashlab_rate_limited_total[10m]) > 200
+        annotations: { summary: "Clients are hitting rate limits" }
+      - alert: CrashLabDown
+        expr: up{job="crashlab"} == 0
+        for: 2m
+        annotations: { summary: "Crash Lab API is not being scraped" }

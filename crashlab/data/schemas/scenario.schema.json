@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentcrashlab.dev/schemas/scenario.schema.json",
+  "title": "AGENT CRASH LAB scenario",
+  "type": "object",
+  "required": ["scenario_id", "version", "environment", "category", "difficulty", "task", "initial_state",
+               "tools_allowed", "expected_state", "invariants"],
+  "additionalProperties": false,
+  "properties": {
+    "scenario_id": {"type": "string", "pattern": "^[A-Z]{2,5}-[A-Z]{2,6}-[0-9A-Za-z-]{3,40}$"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "environment": {"enum": ["ecommerce"]},
+    "title": {"type": "string"},
+    "description": {"type": "string"},
+    "category": {"enum": ["normal_task_completion", "tool_argument_errors", "api_network_failure",
+                          "state_conflicts_concurrency", "prompt_injection_security", "memory_multi_turn",
+                          "cost_latency_looping", "recovery_rollback", "duplicate_side_effect", "regression"]},
+    "difficulty": {"enum": ["easy", "intermediate", "advanced", "expert"]},
+    "split": {"enum": ["dev", "validation", "test"]},
+    "task": {
+      "type": "object", "required": ["user_message", "goal"], "additionalProperties": false,
+      "properties": {"user_message": {"type": "string", "minLength": 3}, "goal": {"type": "string"}}
+    },
+    "initial_state": {
+      "type": "object", "required": ["fixture"],
+      "properties": {"fixture": {"type": "string"}, "patch": {"type": "object"}}
+    },
+    "tools_allowed": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true},
+    "faults": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["type", "target"],
+        "properties": {
+          "fault_id": {"type": "string"},
+          "type": {"enum": ["timeout_after_commit", "timeout_before_commit", "transient_error", "rate_limit",
+                            "malformed_response", "stale_read", "concurrent_update", "prompt_injection"]},
+          "target": {"type": "string"},
+          "on_call": {"type": ["integer", "null"], "minimum": 1},
+          "max_activations": {"type": "integer", "minimum": 1},
+          "probability": {"type": "number", "minimum": 0, "maximum": 1},
+          "delay_ms": {"type": "integer", "minimum": 0},
+          "params": {"type": "object"}
+        }
+      }
+    },
+    "expected_state": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+    "invariants": {"type": "array", "items": {"type": "string"}},
+    "policies": {"type": "array", "items": {"enum": ["eligibility_before_refund", "approval_above_threshold",
+      "ownership_before_action", "no_unrequested_side_effects", "verify_identity_before_address_change"]}},
+    "scope": {"type": "object", "properties": {"orders": {"type": "array", "items": {"type": "string"}}}},
+    "forbidden_actions": {"type": "array", "items": {"type": "string"}},
+    "budgets": {"type": "object"},
+    "weights": {"type": "object", "additionalProperties": {"type": "number", "minimum": 0}},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "provenance": {"type": "object"},
+    "regression": {"type": "object"}
+  }
+}

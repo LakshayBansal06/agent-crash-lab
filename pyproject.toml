@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-crash-lab"
+version = "0.1.0"
+description = "Autonomous testing, debugging and reliability platform for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = ["jsonschema>=4.20"]
+
+[project.optional-dependencies]
+server = ["fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+dev = ["pytest>=8", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+
+[project.scripts]
+crashlab = "crashlab.cli:main"
+
+[tool.setuptools]
+packages = ["crashlab", "crashlab.agents", "crashlab.environments", "server"]
+
+[tool.setuptools.package-data]
+crashlab = ["data/scenarios/*.json", "data/schemas/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 125
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "S", "UP"]
+# S311: seeded PRNGs are intentional (reproducible simulation, not crypto). E731/E702: terse CLI helpers.
+ignore = ["E501", "S101", "S311", "E731", "E702", "UP007"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["server.security.requires", "fastapi.Depends", "fastapi.Path", "server.app.ID", "server.app.PathParam"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S", "B"]

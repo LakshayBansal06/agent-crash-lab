@@ -1,0 +1,51 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.lock -e ".[dev]" ruff pip-audit playwright
+      - name: Install a headless browser for the dashboard tests
+        run: python -m playwright install --with-deps chromium
+      - name: Lint (style, bugs, security rules)
+        run: ruff check crashlab server tests
+      - name: Tests (engine, evaluators, API, security, browser)
+        run: pytest -q
+      - name: Validate scenario dataset
+        run: crashlab validate
+      - name: Known-vulnerability scan of dependencies
+        run: pip-audit -r requirements.lock
+      - name: Secret scan (blocks committed .env files, keys, tokens)
+        uses: gitleaks/gitleaks-action@v2
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }
+
+  agent-reliability:
+    # Dogfooding: the reference agent must clear the release gate on every PR.
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.lock -e .
+      - name: Discover failures with the baseline agent and save regressions
+        run: crashlab run --agents v1 v2 --repeats 5 --quiet --out results.json
+      - name: Release gate for the candidate
+        run: |
+          crashlab run --agents v2 --repeats 5 --quiet \
+            --gate "pass^5>=0.85,security==0,duplicates==0,false_completion==0" \
+            --fail-on-regression
+      - name: Static reliability report
+        run: crashlab export-demo --out report/index.html
+      - uses: actions/upload-artifact@v4
+        with: { name: reliability-report, path: "report/ results.json" }

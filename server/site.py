@@ -1,0 +1,581 @@
+"""Public website: landing page, privacy policy, contact form, thank-you page,
+404, sitemap.xml and robots.txt.
+
+The dashboard (/app) and the API (/api) are private and never indexed. These
+pages are the public face: server-rendered HTML (fast, crawlable, no JS needed
+to read them), each with its own title, description, canonical URL and share
+preview.
+
+Optional integrations are configured with environment variables and switch
+themselves off when unset, so the site never ships placeholder IDs:
+
+  CRASHLAB_PUBLIC_URL      https://your-domain  (canonical URLs, sitemap, share previews)
+  CRASHLAB_GA_ID           G-XXXXXXXXXX         (Google Analytics 4, loaded only after consent)
+  TURNSTILE_SITE_KEY       Cloudflare Turnstile widget key  } contact-form spam protection
+  TURNSTILE_SECRET_KEY     Cloudflare Turnstile secret      }
+  CRASHLAB_CONTACT_EMAIL   address shown in the privacy policy
+  CRASHLAB_OPERATOR        who runs this site (named in the privacy policy)
+"""
+from __future__ import annotations
+
+import datetime as dt
+import hashlib
+import hmac
+import html
+import json
+import os
+import re
+import secrets
+import time
+from collections.abc import Callable
+from pathlib import Path
+from typing import Any
+from urllib.parse import parse_qs
+
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
+
+from .observability import log
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+SITE_DIR = WEB_DIR / "site"
+GA_RE = re.compile(r"^G-[A-Z0-9]{4,16}$")
+EMAIL_RE = re.compile(r"^[^@\s<>\"']{1,64}@[^@\s<>\"']{1,190}\.[A-Za-z]{2,24}$")
+POLICY_UPDATED = "2026-11-17"
+# When each page's content last changed. Shown in the footer and used as <lastmod> in sitemap.xml.
+PAGE_UPDATED = {"/": "2026-11-17", "/contact": "2026-11-17", "/privacy": POLICY_UPDATED}
+UTM_KEYS = ("utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content")
+UTM_RE = re.compile(r"^[\w .+\-%/]{1,100}$")
+
+# Real numbers from `crashlab run --agents v1 v2 --repeats 5` (seeded, reproducible).
+# tests/test_site.py re-runs the benchmark and fails if these ever drift.
+RESULTS = {"episodes": 200, "v1_pass": 19, "v2_pass": 99, "v1_dup": "15%", "v2_dup": "0%",
+           "v1_attack": "75%", "v2_attack": "0%", "modes": 13, "repro_from": 8, "repro_to": 2}
+
+FAQ: list[tuple[str, str]] = [
+    ("What does AGENT CRASH LAB test?",
+     "Tool-using AI agents doing multi-step tasks. It runs your agent inside a simulated business system, injects "
+     "realistic faults (timeouts, rate limits, stale data, prompt injection, race conditions) and checks the "
+     "resulting system state, not just the agent's reply."),
+    ("How is this different from an LLM evaluation dashboard?",
+     "Evaluation dashboards score answers. Crash Lab changes the world while the agent works and then proves what "
+     "happened in the database: a refund issued twice, an order modified without permission, a success claimed that "
+     "never happened. Each failure is minimized to a short reproduction and turned into a regression test."),
+    ("Does it work with my agent framework?",
+     "Yes, as long as your agent can call Python functions. The SDK wraps any agent function, and a built-in "
+     "tool-calling agent can test Claude models directly. Adapters for specific frameworks are on the roadmap."),
+    ("Do I need an LLM API key?",
+     "No. The built-in reference agents run offline and free. A key is only needed to test a real model."),
+    ("Is my data sent anywhere?",
+     "No. Everything runs on your own machine or server. The public website uses Google Analytics only if you accept "
+     "cookies, and contact-form messages are stored on this server only."),
+    ("Are the results reproducible?",
+     "Yes. Every fault, agent choice and timestamp is driven by a seed, so the same seed replays the identical trace. "
+     "Reliability is reported over repeated trials with confidence intervals and pass^k."),
+    ("What does it cost?",
+     "The software is free to run yourself. Testing a real model costs only what your model provider charges."),
+]
+
+
+def _env(name: str) -> str:
+    return os.environ.get(name, "").strip()
+
+
+def ga_id() -> str | None:
+    v = _env("CRASHLAB_GA_ID")
+    return v if GA_RE.match(v) else None
+
+
+def turnstile() -> tuple[str, str] | None:
+    site, secret = _env("TURNSTILE_SITE_KEY"), _env("TURNSTILE_SECRET_KEY")
+    return (site, secret) if site and secret else None
+
+
+def base_url(request: Request) -> str:
+    configured = _env("CRASHLAB_PUBLIC_URL").rstrip("/")
+    return configured or str(request.base_url).rstrip("/")
+
+
+def site_csp(*, analytics: bool, captcha: bool) -> str:
+    script = ["'self'"]
+    connect, img, frame = ["'self'"], ["'self'", "data:"], ["'none'"]
+    if analytics:
+        script.append("https://www.googletagmanager.com")
+        connect += ["https://*.google-analytics.com", "https://*.analytics.google.com", "https://www.googletagmanager.com"]
+        img += ["https://*.google-analytics.com", "https://www.googletagmanager.com"]
+    if captcha:
+        script.append("https://challenges.cloudflare.com")
+        frame = ["https://challenges.cloudflare.com"]
+    return (f"default-src 'self'; script-src {' '.join(script)}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            f"font-src https://fonts.gstatic.com; img-src {' '.join(img)}; connect-src {' '.join(connect)}; "
+            f"frame-src {' '.join(frame)}; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+
+LOGO = ('<svg viewBox="0 0 26 26" aria-hidden="true" focusable="false"><circle cx="13" cy="13" r="12" fill="#14171c" '
+        'stroke="#f2c230" stroke-width="1.5"/><path d="M13 1a12 12 0 0 1 12 12H13zM13 25A12 12 0 0 1 1 13h12z" '
+        'fill="#f2c230"/></svg>')
+
+
+def human_date(iso: str) -> str:
+    d = dt.date.fromisoformat(iso)
+    return f"{d.day} {d.strftime('%B %Y')}"
+
+
+def layout(request: Request, *, path: str, title: str, description: str, body: str, indexable: bool = True,
+           captcha: bool = False, event: str | None = None) -> str:
+    e = html.escape
+    base = base_url(request)
+    canonical = base + path
+    ga = ga_id()
+    year = dt.date.today().year
+    full_title = title if title.startswith("AGENT CRASH LAB") else f"{title} · AGENT CRASH LAB"
+    upd = PAGE_UPDATED.get(path)
+    updated = (f' · <span class="updated">Page last updated <time datetime="{upd}">{human_date(upd)}</time></span>'
+               if upd and indexable else "")
+    nav = [("/", "Home"), ("/#how", "How it works"), ("/#faq", "FAQ"), ("/contact", "Contact")]
+    current = ' aria-current="page"'
+    nav_html = "".join(f'<a href="{h}"{current if h == path else ""}>{t}</a>' for h, t in nav)
+    attrs = f' data-ga="{e(ga)}"' if ga else ""
+    attrs += f' data-event="{e(event)}"' if event and ga else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(full_title)}</title>
+<meta name="description" content="{e(description)}">
+<meta name="robots" content="{"index, follow" if indexable else "noindex, nofollow"}">
+<link rel="canonical" href="{e(canonical)}">
+<meta name="theme-color" content="#0f1318">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="AGENT CRASH LAB">
+<meta property="og:title" content="{e(full_title)}">
+<meta property="og:description" content="{e(description)}">
+<meta property="og:url" content="{e(canonical)}">
+<meta property="og:image" content="{e(base)}/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="AGENT CRASH LAB: the fixed agent passed 99 of 100 crash tests, the original passed 19.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(full_title)}">
+<meta name="twitter:description" content="{e(description)}">
+<meta name="twitter:image" content="{e(base)}/og.png">
+<link rel="icon" href="/favicon.ico" type="image/svg+xml">
+<script src="/static/theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@100..125,400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/site.css">
+{'<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>' if captcha else ''}
+<script src="/static/ui.js" defer></script>
+<script src="/static/site.js" defer></script>
+</head>
+<body class="site"{attrs}>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-head">
+  <a class="site-brand" href="/" aria-label="AGENT CRASH LAB home">{LOGO}<span>AGENT CRASH LAB</span></a>
+  <nav class="site-nav" id="site-nav" aria-label="Main">{nav_html}<a class="btn primary" href="/app/">Open the dashboard</a></nav>
+  <div class="head-tools" id="head-tools"></div>
+  <button class="menu-btn site-menu-btn" id="site-menu-btn" aria-controls="site-nav" aria-expanded="false" aria-label="Open menu"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+</header>
+<main id="main">{body}</main>
+<footer class="site-foot">
+  <div><a class="site-brand" href="/" aria-label="AGENT CRASH LAB home">{LOGO}<span>AGENT CRASH LAB</span></a>
+  <p>Find AI-agent failures before your customers do.</p></div>
+  <nav aria-label="Footer"><a href="/">Home</a><a href="/#how">How it works</a><a href="/#results">Results</a><a href="/#faq">FAQ</a><a href="/contact">Contact</a><a href="/privacy">Privacy policy</a><a href="/app/">Dashboard</a><a href="/docs">API reference</a>{'<button type="button" class="linkish" id="cookie-settings">Cookie settings</button>' if ga else ''}</nav>
+  <p class="copy">© {year} AGENT CRASH LAB{updated}</p>
+</footer>
+</body>
+</html>"""
+
+
+def _testimonials() -> list[dict[str, str]]:
+    """Only real, consented quotes: entries must name the person, their role and carry consent=true.
+    The section is hidden entirely while the file is empty."""
+    f = SITE_DIR / "testimonials.json"
+    try:
+        items = json.loads(f.read_text())
+    except (OSError, ValueError):
+        return []
+    ok = []
+    for t in items if isinstance(items, list) else []:
+        if (isinstance(t, dict) and t.get("consent") is True and all(isinstance(t.get(k), str) and t[k].strip()
+                                                                       for k in ("name", "role", "quote"))):
+            ok.append(t)
+        else:
+            log("testimonial_skipped", reason="missing name/role/quote or consent=true")
+    return ok
+
+
+def landing_body() -> str:
+    e, r = html.escape, RESULTS
+    faq = "".join(f'<details class="faq-item" id="faq-{i}"><summary>{e(q)}</summary><p>{e(a)}</p></details>'
+                  for i, (q, a) in enumerate(FAQ, 1))
+    quotes = _testimonials()
+    testimonials = ""
+    if quotes:
+        def card(t: dict[str, str]) -> str:
+            src = t.get("url", "")
+            link = f' · <a href="{e(src)}" rel="noopener">source</a>' if src.startswith("https://") else ""
+            return (f'<figure class="quote"><blockquote>“{e(t["quote"])}”</blockquote>'
+                    f'<figcaption><b>{e(t["name"])}</b> · {e(t["role"])}{link}</figcaption></figure>')
+
+        cards = "".join(card(t) for t in quotes)
+        testimonials = f'<section class="site-section" id="testimonials"><h2>What developers say</h2><div class="quotes">{cards}</div></section>'
+    steps = [("Stress", "Run your agent against realistic scenarios while faults fire: gateway timeouts, rate limits, stale reads, prompt injection, concurrent writes."),
+             ("Detect", "Six evaluators check the real system state, policies, security and the agent's claims. A polite reply can't hide a double refund."),
+             ("Explain", "Every failure gets a category, the evidence events and a root-cause hypothesis anchored at the earliest divergence."),
+             ("Minimize", "Delta debugging shrinks a long failing run to the few steps that still reproduce it, with faults pinned in place."),
+             ("Prevent", "The failure becomes a versioned regression test that re-runs the real agent before every release."),
+             ("Compare", "Versions are compared on identical seeds with confidence intervals, pass^k and a paired significance test.")]
+    how = "".join(f'<li><b>{e(t)}</b><span>{e(d)}</span></li>' for t, d in steps)
+    jsonld = json.dumps({"@context": "https://schema.org", "@graph": [
+        {"@type": "SoftwareApplication", "name": "AGENT CRASH LAB", "applicationCategory": "DeveloperApplication",
+         "operatingSystem": "Windows, macOS, Linux", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"},
+         "description": "Reliability testing platform for AI agents: fault injection, root-cause diagnosis, failure minimization and regression tests."},
+        {"@type": "FAQPage", "mainEntity": [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}}
+                                            for q, a in FAQ]}]}).replace("</", "<\\/")
+    return f"""
+<section class="hero">
+  <h1>Your AI agent passed the demo. Will it survive production?</h1>
+  <p class="lede">AGENT CRASH LAB tests tool-using agents against real-world failures: timeouts, rate limits, stale data, prompt injection and race conditions. It finds the bug, shrinks it to a reproduction you can read, and turns it into a test that guards every release.</p>
+  <div class="btn-row"><a class="btn primary" href="/app/">Open the dashboard</a><a class="btn" href="/#how">See how it works</a></div>
+  <figure class="terminal" aria-label="Example output from crashlab demo">
+    <pre><code><span class="ln"><span class="dim">$</span> crashlab demo</span>
+<span class="ln"><span class="dim">⚡ FAULT</span> timeout_after_commit on issue_refund</span>
+<span class="ln">→ issue_refund(order_id='ORD-1002', amount=3499)   <span class="bad">✕ timeout</span></span>
+<span class="ln">→ issue_refund(order_id='ORD-1002', amount=3499)   <span class="ok">✓ ok</span></span>
+<span class="ln"><span class="bad">‼ Invariant violated: refund_count('ORD-1002') &lt;= 1</span></span>
+<span class="ln">DUPLICATE_ACTION · Missing post-timeout state verification</span>
+<span class="ln">Minimize: {r['repro_from']} steps → <span class="ok">{r['repro_to']} steps</span> · regression test saved</span>
+<span class="ln">v1.0.0: <span class="bad">0/10 passing</span>   v2.0.0: <span class="ok">10/10 passing</span></span></code></pre>
+  </figure>
+</section>
+<section class="site-section" id="how">
+  <h2>How it works</h2>
+  <p class="sub">One loop, from a stressed agent to a protected release.</p>
+  <ol class="how">{how}</ol>
+</section>
+<section class="site-section" id="results">
+  <h2>Measured results</h2>
+  <p class="sub">Measured <time datetime="{PAGE_UPDATED['/']}">{human_date(PAGE_UPDATED['/'])}</time> with the included benchmark: {r['episodes']} episodes, 20 scenarios × 5 repeats × 2 versions of a refund agent. Reproduce them with <code>crashlab run</code>.</p>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Metric</th><th class="num">Original agent (v1)</th><th class="num">Fixed agent (v2)</th></tr></thead>
+    <tbody>
+      <tr><td>Episodes passed</td><td class="num">{r['v1_pass']} / 100</td><td class="num">{r['v2_pass']} / 100</td></tr>
+      <tr><td>Duplicate refunds</td><td class="num">{r['v1_dup']}</td><td class="num">{r['v2_dup']}</td></tr>
+      <tr><td>Prompt-injection attacks that worked</td><td class="num">{r['v1_attack']}</td><td class="num">{r['v2_attack']}</td></tr>
+    </tbody></table></div>
+  <p class="sub">{r['modes']} distinct failure modes found in v1, each with evidence, a minimal reproduction and a regression test. The fixed agent still fails once in 100, which is exactly what repeated-trial testing exists to catch.</p>
+</section>
+{testimonials}
+<section class="site-section" id="faq">
+  <h2>Frequently asked questions</h2>
+  <div class="faq">{faq}</div>
+</section>
+<section class="site-section cta">
+  <h2>Find your agent's first real failure today</h2>
+  <p class="sub">Free to run on your own machine. Setup takes about 30 minutes from scratch.</p>
+  <div class="btn-row"><a class="btn primary" href="/app/">Open the dashboard</a><a class="btn" href="/contact">Ask a question</a></div>
+</section>
+<script type="application/ld+json">{jsonld}</script>
+"""
+
+
+def privacy_body() -> str:
+    e = html.escape
+    operator = _env("CRASHLAB_OPERATOR")
+    run_by = f" This site is run by {e(operator)}." if operator else ""
+    email = _env("CRASHLAB_CONTACT_EMAIL")
+    contact = (f'email <a href="mailto:{e(email)}">{e(email)}</a> or use the <a href="/contact">contact form</a>'
+               if email and EMAIL_RE.match(email) else 'use the <a href="/contact">contact form</a>')
+    ga = ga_id()
+    analytics = ("<p>If you click <b>Accept</b> on the cookie banner, we load Google Analytics 4 to count visits and see which pages "
+                 "are useful. It sets cookies (<code>_ga</code>, <code>_ga_*</code>) and sends Google your approximate location, "
+                 "device and browser type, and the pages you view. IP addresses are not stored by Google Analytics 4. If you "
+                 "click <b>Decline</b>, or ignore the banner, Google Analytics never loads. You can change your choice at any "
+                 "time with <b>Cookie settings</b> in the footer. Google's own policy is at "
+                 '<a href="https://policies.google.com/privacy" rel="noopener">policies.google.com/privacy</a>.</p>'
+                 if ga else "<p>This site currently runs no analytics and sets no tracking cookies.</p>")
+    captcha = ("<p>The contact form uses Cloudflare Turnstile to block spam. Turnstile checks your browser for signs of "
+               "automation and does not use cookies for advertising. See "
+               '<a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Cloudflare\'s privacy policy</a>.</p>'
+               if turnstile() else "")
+    return f"""
+<article class="prose">
+  <h1>Privacy policy</h1>
+  <p class="sub">Last updated {POLICY_UPDATED}.{run_by}</p>
+  <h2>The short version</h2>
+  <ul>
+    <li>We collect what you type into the contact form, and nothing else unless you accept analytics cookies.</li>
+    <li>We never sell or share your data for advertising.</li>
+    <li>Agent test data you run in the dashboard stays on the server you run it on.</li>
+  </ul>
+  <h2>What we collect and why</h2>
+  <h3>Contact form</h3>
+  <p>Your name, email address and message, so we can reply. We also store a one-way hash of your IP address to stop abuse; it can't be turned back into your IP. If you arrived through a link with campaign tags (<code>utm_source</code>, <code>utm_campaign</code> and similar), we store those tags with your message so we know which announcement brought you here. Messages are deleted after 180 days.</p>
+  <h3>Stored in your browser</h3>
+  <p>We keep your light or dark theme choice{" and your cookie choice" if ga_id() else ""} in your browser's local storage, and campaign tags from the link you arrived through in session storage, which is cleared when you close the tab. None of this is sent anywhere unless you send the contact form{" or accept analytics" if ga_id() else ""}.</p>
+  {captcha}
+  <h3>Analytics</h3>
+  {analytics}
+  <h3>Server logs</h3>
+  <p>The server records each request's time, page, status and your IP address for security and debugging. Logs are kept for at most 30 days.</p>
+  <h3>Dashboard</h3>
+  <p>The dashboard at <a href="/app/">/app</a> is not public. Access needs an API key, and its pages are never indexed by search engines or tracked by analytics.</p>
+  <h2>Your rights</h2>
+  <p>You can ask to see, correct or delete your data at any time. To do that, {contact}. We reply within 30 days. If you are in India, you have these rights under the Digital Personal Data Protection Act, 2023; in the EU or UK, under the GDPR.</p>
+  <h2>Children</h2>
+  <p>This site is for software developers and isn't directed at children under 18.</p>
+  <h2>Changes</h2>
+  <p>If we change this policy we'll update the date at the top of this page.</p>
+</article>"""
+
+
+FIELDS = {"name": "Your name", "email": "Email", "message": "Message"}
+
+
+def contact_body(*, errors: dict[str, str] | None = None, general: str | None = None,
+                 values: dict[str, str] | None = None, token: str = "", sitekey: str | None = None) -> str:
+    """Server-rendered form with inline, per-field errors and an error summary that links to each
+    field, so it works without JavaScript; site.js adds the same checks before submitting."""
+    e, v, errors = html.escape, values or {}, errors or {}
+
+    def field(name: str, control: str, hint: str = "") -> str:
+        err = errors.get(name)
+        described = " ".join(x for x in (f"{name}-hint" if hint else "", f"{name}-error" if err else "") if x)
+        control = control.replace("{aria}", (' aria-invalid="true"' if err else "") +
+                                  (f' aria-describedby="{described}"' if described else ""))
+        return (f'<div class="field"><label for="{name}">{FIELDS[name]}</label>{control}'
+                + (f'<div class="hint" id="{name}-hint">{hint}</div>' if hint else "")
+                + (f'<div class="field-error" id="{name}-error">{e(err)}</div>' if err else "") + "</div>")
+
+    summary = ""
+    if errors or general:
+        items = "".join(f'<li><a href="#{k}">{e(m)}</a></li>' for k, m in errors.items())
+        summary = (f'<div class="error-summary" role="alert" id="form-error" tabindex="-1"><b>Message not sent.</b> '
+                   f'{e(general or "Please fix the highlighted fields.")}' + (f"<ul>{items}</ul>" if items else "") + "</div>")
+    widget = f'<div class="cf-turnstile" data-sitekey="{e(sitekey)}" data-theme="auto"></div>' if sitekey else ""
+    utm = "".join(f'<input type="hidden" name="{k}" value="{e(v.get(k, ""))}">' for k in UTM_KEYS)
+    return f"""
+<article class="prose">
+  <h1>Contact</h1>
+  <p class="lede">Questions about testing your agent, a bug, or a pilot? Send a message and we'll reply by email.</p>
+  {summary}
+  <form class="form site-form" id="contact-form" method="post" action="/contact" novalidate>
+    {field("name", f'<input id="name" name="name" autocomplete="name" required maxlength="100" value="{e(v.get("name", ""))}"{{aria}}>')}
+    {field("email", f'<input id="email" name="email" type="email" autocomplete="email" required maxlength="254" value="{e(v.get("email", ""))}"{{aria}}>')}
+    {field("message", f'<textarea id="message" name="message" required minlength="10" maxlength="5000" rows="7"{{aria}}>{e(v.get("message", ""))}</textarea>', "10–5,000 characters.")}
+    <div class="hp" aria-hidden="true"><label for="website">Leave this empty</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+    <input type="hidden" name="t" value="{e(token)}">
+    {utm}
+    {widget}
+    <p class="sub">By sending, you agree to our <a href="/privacy">privacy policy</a>.</p>
+    <div class="btn-row"><button class="btn primary" type="submit">Send message</button></div>
+  </form>
+</article>"""
+
+
+THANKS_BODY = """
+<article class="prose">
+  <h1>Thanks, your message was sent</h1>
+  <p class="lede">We usually reply within two working days. Check your spam folder if you don't see it.</p>
+  <div class="btn-row"><a class="btn primary" href="/">Back to the home page</a><a class="btn" href="/app/">Open the dashboard</a></div>
+</article>"""
+
+NOT_FOUND_BODY = """
+<article class="prose notfound">
+  <div class="code" aria-hidden="true">404</div>
+  <h1>This page doesn't exist</h1>
+  <p class="lede">The address may be mistyped or out of date. These pages are still here:</p>
+  <div class="btn-row"><a class="btn primary" href="/">Home page</a><a class="btn" href="/app/">Dashboard</a><a class="btn" href="/#faq">FAQ</a><a class="btn" href="/contact">Contact</a></div>
+</article>"""
+
+
+# ------------------------------------------------------------------ anti-spam
+class FormGuard:
+    """Signed timestamp + honeypot + optional Turnstile. Bots that post instantly, fill the hidden
+    field, replay old tokens or fail the challenge are rejected."""
+
+    MIN_SECONDS, MAX_SECONDS = 3, 2 * 3600
+
+    def __init__(self, key: bytes | None = None) -> None:
+        self.key = key or (_env("CRASHLAB_FORM_SECRET").encode() or secrets.token_bytes(32))
+
+    def issue(self, now: float | None = None) -> str:
+        ts = str(int(now or time.time()))
+        return ts + "." + hmac.new(self.key, ts.encode(), hashlib.sha256).hexdigest()[:32]
+
+    def check(self, token: str, now: float | None = None) -> str | None:
+        try:
+            ts, sig = token.split(".", 1)
+            age = (now or time.time()) - int(ts)
+        except ValueError:
+            return "The form expired. Please try again."
+        good = hmac.new(self.key, ts.encode(), hashlib.sha256).hexdigest()[:32]
+        if not hmac.compare_digest(sig, good) or age > self.MAX_SECONDS:
+            return "The form expired. Please try again."
+        if age < self.MIN_SECONDS:
+            return "That was sent too quickly. Please wait a moment and try again."
+        return None
+
+
+def verify_turnstile(secret: str, token: str, ip: str | None) -> bool:  # pragma: no cover - network
+    import httpx
+
+    try:
+        r = httpx.post("https://challenges.cloudflare.com/turnstile/v0/siteverify", timeout=10,
+                       data={"secret": secret, "response": token, **({"remoteip": ip} if ip else {})})
+        return bool(r.json().get("success"))
+    except Exception:  # noqa: BLE001 - fail closed
+        return False
+
+
+# --------------------------------------------------------------------- routes
+def mount_site(app: FastAPI, *, verifier: Callable[[str, str, str | None], bool] | None = None) -> None:
+    guard = FormGuard()
+    verify = verifier or verify_turnstile
+    store = app.state.store
+    limiter = app.state.limiter
+
+    def page(request: Request, *, path: str, title: str, description: str, body: str, status: int = 200,
+             indexable: bool = True, captcha: bool = False, event: str | None = None) -> HTMLResponse:
+        html_doc = layout(request, path=path, title=title, description=description, body=body, indexable=indexable,
+                          captcha=captcha, event=event)
+        headers = {"Content-Security-Policy": site_csp(analytics=bool(ga_id()), captcha=captcha),
+                   # "no-referrer" makes browsers send Origin: null on form posts, which the CSRF check
+                   # must reject; this standard policy sends only the origin, never the full URL, cross-site.
+                   "Referrer-Policy": "strict-origin-when-cross-origin",
+                   "Cache-Control": "no-cache" if captcha or not indexable else "public, max-age=300"}
+        if not indexable:
+            headers["X-Robots-Tag"] = "noindex, nofollow"
+        return HTMLResponse(html_doc, status_code=status, headers=headers)
+
+    app.state.render_404 = lambda request: page(
+        request, path=request.url.path, title="Page not found", description="This page doesn't exist on AGENT CRASH LAB.",
+        body=NOT_FOUND_BODY, status=404, indexable=False)
+
+    @app.get("/", include_in_schema=False)
+    def home(request: Request) -> HTMLResponse:
+        return page(request, path="/", title="AGENT CRASH LAB · Reliability testing for AI agents",
+                    description="Test AI agents against timeouts, prompt injection and race conditions. Find failures, "
+                                "shrink them to a reproduction and turn them into regression tests.",
+                    body=landing_body())
+
+    @app.get("/privacy", include_in_schema=False)
+    def privacy(request: Request) -> HTMLResponse:
+        return page(request, path="/privacy", title="Privacy policy",
+                    description="What AGENT CRASH LAB collects (contact-form messages, optional analytics), why, "
+                                "how long we keep it and how to have it deleted.",
+                    body=privacy_body())
+
+    def contact_page(request: Request, *, error: str | None = None, errors: dict[str, str] | None = None,
+                     values: dict[str, str] | None = None, status: int = 200) -> HTMLResponse:
+        ts = turnstile()
+        return page(request, path="/contact", title="Contact",
+                    description="Questions about testing your AI agent, a bug report or a pilot? Send us a message.",
+                    body=contact_body(general=error, errors=errors, values=values, token=guard.issue(),
+                                      sitekey=ts[0] if ts else None),
+                    captcha=bool(ts), status=status)
+
+    @app.get("/contact", include_in_schema=False)
+    def contact(request: Request) -> HTMLResponse:
+        return contact_page(request)
+
+    @app.post("/contact", include_in_schema=False)
+    async def contact_submit(request: Request) -> Response:
+        ip = request.client.host if request.client else None
+        if limiter.check("ip:" + (ip or "?"), "contact"):
+            return contact_page(request, error="Too many messages from your network. Please try again in a few minutes.",
+                                status=429)
+        origin = request.headers.get("origin")
+        if origin and origin.rstrip("/") != base_url(request) and origin.rstrip("/") != str(request.base_url).rstrip("/"):
+            return contact_page(request, error="This form must be sent from this website.", status=403)
+        raw = (await request.body())[:20_000].decode("utf-8", "replace")
+        form = {k: v[0] for k, v in parse_qs(raw, keep_blank_values=True).items()}
+        values = {k: form.get(k, "").strip() for k in ("name", "email", "message")}
+        source = {k: form[k].strip() for k in UTM_KEYS if form.get(k, "").strip() and UTM_RE.match(form[k].strip())}
+        values.update(source)
+        if form.get("website"):
+            log("contact_spam", reason="honeypot")
+            return RedirectResponse("/contact/thanks", status_code=303)  # don't tell the bot
+        errors: dict[str, str] = {}
+        if not 1 <= len(values["name"]) <= 100:
+            errors["name"] = "Enter your name."
+        if not EMAIL_RE.match(values["email"]):
+            errors["email"] = "Enter a valid email address, like name@example.com."
+        if not 10 <= len(values["message"]) <= 5000:
+            errors["message"] = (f"Your message is {len(values['message'])} characters; write at least 10."
+                                 if len(values["message"]) < 10 else "Keep your message under 5,000 characters.")
+        if errors:
+            return contact_page(request, errors=errors, values=values, status=422)
+        problem = guard.check(form.get("t", ""))
+        ts = turnstile()
+        if not problem and ts and not verify(ts[1], form.get("cf-turnstile-response", ""), ip):
+            problem = "We couldn't confirm you're human. Please complete the check and try again."
+        if problem:
+            return contact_page(request, error=problem, values=values, status=422)
+        store.save_contact_message(values["name"], values["email"], values["message"],
+                                   hashlib.sha256((ip or "").encode()).hexdigest()[:16], source=source or None)
+        log("contact_received", email_domain=values["email"].split("@")[-1])
+        return RedirectResponse("/contact/thanks", status_code=303)
+
+    @app.get("/contact/thanks", include_in_schema=False)
+    def thanks(request: Request) -> HTMLResponse:
+        return page(request, path="/contact/thanks", title="Message sent",
+                    description="Thanks for contacting AGENT CRASH LAB.", body=THANKS_BODY, indexable=False,
+                    event="generate_lead")
+
+    @app.get("/robots.txt", include_in_schema=False)
+    def robots(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(
+            "User-agent: *\nAllow: /\nDisallow: /app/\nDisallow: /api/\nDisallow: /docs\nDisallow: /redoc\n"
+            "Disallow: /metrics\nDisallow: /contact/thanks\n\n"
+            f"Sitemap: {base_url(request)}/sitemap.xml\n")
+
+    @app.get("/sitemap.xml", include_in_schema=False)
+    def sitemap(request: Request) -> Response:
+        base = html.escape(base_url(request))
+        urls = [("/", "weekly", "1.0"), ("/contact", "yearly", "0.5"), ("/privacy", "yearly", "0.3")]
+        body = "".join(f"<url><loc>{base}{p}</loc><lastmod>{PAGE_UPDATED[p]}</lastmod><changefreq>{f}</changefreq>"
+                       f"<priority>{pr}</priority></url>" for p, f, pr in urls)
+        xml = f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{body}</urlset>\n'
+        return Response(xml, media_type="application/xml")
+
+    @app.get("/search-index.json", include_in_schema=False)
+    def search_index() -> Response:
+        return Response(json.dumps(search_items()), media_type="application/json",
+                        headers={"Cache-Control": "public, max-age=300"})
+
+    @app.get("/og.png", include_in_schema=False)
+    def og() -> Response:
+        return Response((WEB_DIR / "og.png").read_bytes(), media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.get("/app", include_in_schema=False)
+    def app_redirect() -> RedirectResponse:
+        return RedirectResponse("/app/", status_code=308)
+
+
+def search_items() -> list[dict[str, str]]:
+    """What the site search can find: every public page, section and FAQ answer."""
+    items = [
+        {"title": "Home", "subtitle": "Reliability testing for AI agents", "url": "/",
+         "text": "fault injection timeouts rate limits stale data prompt injection race conditions regression tests"},
+        {"title": "How it works", "subtitle": "Stress, detect, explain, minimize, prevent, compare", "url": "/#how",
+         "text": "loop evaluators delta debugging minimization regression release gate pass^k confidence intervals"},
+        {"title": "Measured results", "subtitle": f"v1 passed {RESULTS['v1_pass']}/100, v2 passed {RESULTS['v2_pass']}/100",
+         "url": "/#results", "text": "benchmark duplicate refunds prompt injection attacks success rate failure modes"},
+        {"title": "Contact", "subtitle": "Send us a message", "url": "/contact", "text": "email question bug pilot support help"},
+        {"title": "Privacy policy", "subtitle": "What we collect and why", "url": "/privacy",
+         "text": "data cookies analytics google retention delete rights gdpr dpdp contact form utm campaign"},
+        {"title": "Dashboard", "subtitle": "Experiments, failures, traces and regression tests", "url": "/app/",
+         "text": "open app experiments failures trace explorer regressions"},
+        {"title": "API reference", "subtitle": "Interactive REST documentation", "url": "/docs", "text": "api rest openapi swagger"},
+    ]
+    items += [{"title": q, "subtitle": "FAQ", "url": f"/#faq-{i}", "text": a} for i, (q, a) in enumerate(FAQ, 1)]
+    return items
+
+
+def landing_results_text() -> dict[str, Any]:
+    return dict(RESULTS)

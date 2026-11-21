@@ -1,0 +1,150 @@
+"""Authentication, authorization, rate limiting and HTTP hardening."""
+from __future__ import annotations
+
+import hashlib
+import ipaddress
+import os
+import threading
+import time
+from dataclasses import dataclass, field
+
+from fastapi import Depends, HTTPException, Request
+
+from crashlab.store import Principal
+
+ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:\-]{0,127}$"
+MAX_BODY_BYTES = int(os.environ.get("CRASHLAB_MAX_BODY_BYTES", str(5 * 1024 * 1024)))
+
+LOCAL_PRINCIPAL = Principal("local-dev", "default", frozenset({"admin"}))
+
+
+def auth_mode() -> str:
+    mode = os.environ.get("CRASHLAB_AUTH", "required").lower()
+    if mode not in ("required", "off"):
+        raise RuntimeError("CRASHLAB_AUTH must be 'required' or 'off'")
+    return mode
+
+
+def is_loopback(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"
+
+
+def bearer(request: Request) -> str | None:
+    h = request.headers.get("authorization", "")
+    return h[7:].strip() if h.lower().startswith("bearer ") else None
+
+
+def requires(scope: str):
+    """FastAPI dependency: authenticate the caller and check one scope.
+    401 = who are you?  403 = you can't do that."""
+
+    def dep(request: Request) -> Principal:
+        if auth_mode() == "off":
+            request.state.principal = LOCAL_PRINCIPAL
+            return LOCAL_PRINCIPAL
+        store = request.app.state.store
+        p = store.authenticate(bearer(request))
+        if p is None:
+            request.app.state.metrics.inc("auth_failures_total")
+            raise HTTPException(401, "missing or invalid API key", headers={"WWW-Authenticate": "Bearer"})
+        if not p.can(scope):
+            raise HTTPException(403, f"this key lacks the '{scope}' scope")
+        request.state.principal = p
+        return p
+
+    return Depends(dep)
+
+
+# ------------------------------------------------------------------ rate limit
+@dataclass
+class Bucket:
+    tokens: float
+    updated: float = field(default_factory=time.monotonic)
+
+
+class RateLimiter:
+    """Token bucket per (client, class). In-process: fine for one API node;
+    a multi-node deployment moves the buckets to Redis."""
+
+    def __init__(self, limits: dict[str, tuple[int, float]]) -> None:
+        self.limits = limits  # class -> (capacity, refill tokens per second)
+        self.buckets: dict[tuple[str, str], Bucket] = {}
+        self.lock = threading.Lock()
+
+    def check(self, client: str, klass: str) -> float:
+        """Returns 0 if allowed, else seconds to wait."""
+        cap, rate = self.limits[klass]
+        now = time.monotonic()
+        with self.lock:
+            b = self.buckets.get((client, klass))
+            if b is None:
+                b = self.buckets[(client, klass)] = Bucket(float(cap), now)
+            b.tokens = min(cap, b.tokens + (now - b.updated) * rate)
+            b.updated = now
+            if b.tokens >= 1:
+                b.tokens -= 1
+                return 0.0
+            if len(self.buckets) > 50_000:  # bound memory under a flood of clients
+                self.buckets.clear()
+            return (1 - b.tokens) / rate
+
+
+def per_minute(env: str, default: int) -> tuple[int, float]:
+    n = int(os.environ.get(env, str(default)))
+    return (n, n / 60.0)
+
+
+def rate_limiter() -> RateLimiter:
+    return RateLimiter({
+        "read": per_minute("CRASHLAB_RATE_READ_PER_MIN", 300),
+        "write": per_minute("CRASHLAB_RATE_WRITE_PER_MIN", 60),
+        "expensive": per_minute("CRASHLAB_RATE_EXPENSIVE_PER_MIN", 10),
+        "contact": per_minute("CRASHLAB_RATE_CONTACT_PER_MIN", 5),
+    })
+
+
+EXPENSIVE = ("/experiments", "/minimize", "/regression-suites", "/regression")
+
+
+def classify(method: str, path: str) -> str:
+    if method in ("GET", "HEAD", "OPTIONS"):
+        return "read"
+    return "expensive" if any(path.endswith(s) or s + "/" in path for s in EXPENSIVE) else "write"
+
+
+def client_id(request: Request) -> str:
+    token = bearer(request)
+    if token:
+        return "k:" + hashlib.sha256(token.encode()).hexdigest()[:16]
+    return "ip:" + (request.client.host if request.client else "unknown")
+
+
+# --------------------------------------------------------------------- headers
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+       "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
+# The interactive API reference (Swagger UI) is the only page allowed to load scripts from a CDN.
+DOCS_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; "
+            "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP,
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
+
+
+def cors_origins() -> list[str]:
+    raw = os.environ.get("CRASHLAB_CORS", "").strip()
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if "*" in origins:
+        raise RuntimeError("CRASHLAB_CORS='*' is not allowed: list the exact origins that may call the API")
+    return origins

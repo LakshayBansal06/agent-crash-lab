@@ -1,0 +1,38 @@
+# Local:      docker compose up --build                        -> http://127.0.0.1:8000
+# Production: set CRASHLAB_DOMAIN + CRASHLAB_PUBLIC_URL in .env, then
+#             docker compose --profile https up --build -d     -> https://<your domain>
+# First key:  docker compose run --rm crashlab crashlab keys create --name admin --scopes admin
+# Backups:    docker compose run --rm crashlab crashlab backup create /data/backups/manual.db
+services:
+  crashlab:
+    build: .
+    ports: ["127.0.0.1:8000:8000"]   # never exposed directly; Caddy is the only public entry point
+    env_file: [.env]
+    environment: { CRASHLAB_AUTH: required }
+    volumes: ["crashlab-data:/data"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1g }
+    restart: unless-stopped
+
+  caddy:
+    profiles: ["https"]
+    image: caddy:2
+    depends_on: [crashlab]
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      CRASHLAB_DOMAIN: ${CRASHLAB_DOMAIN:?set CRASHLAB_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  crashlab-data:
+  caddy-data:
+  caddy-config:

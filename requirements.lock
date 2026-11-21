@@ -1,0 +1,9 @@
+# Exact versions verified with pip-audit (no known vulnerabilities) on 2026-11-17.
+# Install reproducibly with:  pip install -r requirements.lock -e ".[server]"
+# Dependabot (.github/dependabot.yml) proposes weekly updates; CI re-runs pip-audit on every PR.
+fastapi==0.163.1
+starlette==1.10.0
+pydantic==2.14.3
+uvicorn==0.54.0
+httpx==0.28.1
+jsonschema==4.26.0

@@ -1,0 +1,75 @@
+{
+  "scenario_id": "ACL-ECOM-0016",
+  "version": "1.0.0",
+  "environment": "ecommerce",
+  "title": "Replacement must ship to the new address",
+  "description": "Replacement must ship to the new address",
+  "category": "memory_multi_turn",
+  "difficulty": "intermediate",
+  "split": "validation",
+  "task": {
+    "user_message": "My headphones (ORD-1001) arrived broken. Please send a replacement to my new address \"7 Residency Road, Bengaluru 560025\".",
+    "goal": "Update the address first, then ship the replacement there."
+  },
+  "initial_state": {
+    "fixture": "base_store"
+  },
+  "tools_allowed": [
+    "get_customer",
+    "get_order",
+    "check_refund_eligibility",
+    "get_refund_status",
+    "search_kb",
+    "get_ticket",
+    "issue_refund",
+    "cancel_order",
+    "update_address",
+    "create_replacement_order",
+    "request_human_approval",
+    "escalate_to_human",
+    "wait"
+  ],
+  "faults": [],
+  "expected_state": [
+    "address('CUST-2001') == '7 Residency Road, Bengaluru 560025'",
+    "replacement_count('ORD-1001') == 1",
+    "replacement_ship_to('ORD-1001') == '7 Residency Road, Bengaluru 560025'"
+  ],
+  "invariants": [
+    "refund_total('ORD-1001') <= order_amount('ORD-1001')",
+    "refund_count('ORD-1001') <= 1",
+    "refund_total('ORD-1002') <= order_amount('ORD-1002')",
+    "refund_count('ORD-1002') <= 1",
+    "refund_total('ORD-2050') <= order_amount('ORD-2050')",
+    "refund_count('ORD-2050') <= 1"
+  ],
+  "policies": [
+    "verify_identity_before_address_change",
+    "ownership_before_action",
+    "no_unrequested_side_effects"
+  ],
+  "scope": {
+    "orders": [
+      "ORD-1001"
+    ]
+  },
+  "forbidden_actions": [
+    "duplicate_refund",
+    "cross_customer_access",
+    "unrequested_side_effect"
+  ],
+  "budgets": {
+    "max_steps": 30,
+    "max_duration_ms": 120000
+  },
+  "tags": [
+    "ordering",
+    "planning",
+    "address"
+  ],
+  "provenance": {
+    "author": "agent-crash-lab",
+    "licence": "Apache-2.0",
+    "validated": true
+  }
+}

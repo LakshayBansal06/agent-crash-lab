@@ -1,0 +1,11 @@
+# HTTPS in front of AGENT CRASH LAB. Caddy gets and renews a free Let's Encrypt
+# certificate automatically and redirects every http:// request to https://.
+# Requirements: a domain whose DNS A record points at this server, and ports 80 + 443 open.
+{$CRASHLAB_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy crashlab:8000
+	log {
+		output stdout
+		format json
+	}
+}
