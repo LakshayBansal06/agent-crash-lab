@@ -33,7 +33,9 @@
   // ---- floating buttons: back to top + contact (not on the contact pages themselves)
   if (UI) {
     let contact = null;
-    if (!path.startsWith("/contact")) {
+    // not on the contact pages, and not over the sign-in forms (it would cover their buttons on phones)
+    const formPage = /^\/(contact|login|signup|setup|forgot|reset|account|admin)/.test(path);
+    if (!formPage) {
       contact = document.createElement("a");
       contact.className = "fab primary"; contact.href = "/contact";
       contact.setAttribute("aria-label", "Contact us");
