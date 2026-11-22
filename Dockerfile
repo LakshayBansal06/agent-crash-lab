@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 CRASHLAB_DB=/data/crashlab.db CRASHLAB_AUTH=required
 COPY pyproject.toml README.md requirements.lock ./
