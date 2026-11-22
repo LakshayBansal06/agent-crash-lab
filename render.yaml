@@ -4,14 +4,13 @@ services:
   - type: web
     name: agent-crash-lab
     runtime: docker
-    plan: starter            # a persistent disk needs a paid plan; on "free" the database resets on every deploy
+    # Free plan: no card needed, but no persistent disk, so accounts and results are wiped on every
+    # restart or deploy, and the service sleeps after 15 idle minutes. To keep data, switch to
+    # `plan: starter` and add back:  disk: {name: data, mountPath: /data, sizeGB: 1}
+    plan: free
     region: singapore        # closest Render region to India
     healthCheckPath: /ready
     autoDeploy: true
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 1
     envVars:
       - key: CRASHLAB_FORM_SECRET
         generateValue: true  # signs form and Google sign-in tokens
