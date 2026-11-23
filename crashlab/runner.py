@@ -12,7 +12,7 @@ import random
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from .agents.base import Agent, FinalAnswer, Observation, ToolCall
+from .agents.base import Agent, FinalAnswer, Observation, ProviderError, ToolCall
 from .assertions import evaluate
 from .environments import Environment, ToolError, make_environment
 from .events import EventCollector, VirtualClock, diff_state
@@ -76,7 +76,7 @@ class EpisodeResult:
     scenario_id: str
     agent: dict[str, Any]
     seed: int
-    termination: str  # final_answer | max_steps | loop_guard | timeout | agent_error | budget
+    termination: str  # final_answer | max_steps | loop_guard | timeout | agent_error | provider_error | budget
     events: list[dict[str, Any]]
     initial_state: dict[str, Any]
     final_state: dict[str, Any]
@@ -160,18 +160,28 @@ def run_episode(
                                  "action_index": len(actions) - 1})
 
     for step in range(budgets.max_steps):
-        u = _sim_usage(usage_rng, step, obs)
+        sim = _sim_usage(usage_rng, step, obs)
         try:
             action = agent.act(obs)
+        except ProviderError as exc:  # the model provider failed, not the agent: the run is inconclusive
+            col.emit("guardrail", actor="environment", message=f"Model provider error: {exc}",
+                     metadata={"provider_error": True})
+            termination = "provider_error"
+            break
         except Exception as exc:  # the agent itself crashed
             col.emit("guardrail", actor="environment", message=f"Agent raised {type(exc).__name__}: {exc}")
             termination = "agent_error"
             break
         clock.advance(380 + usage_rng.randint(0, 420))
+        # model-backed agents report what they really spent; scripted agents get the simulated estimate
+        u = agent.pop_usage() if agent.reports_usage else {**sim, "llm_calls": 1}
         tokens["input_tokens"] += u["input_tokens"]
         tokens["output_tokens"] += u["output_tokens"]
-        tokens["llm_calls"] += 1
-        step_ev = col.emit("agent_step", usage=u, metadata={"step": step + 1, "action": type(action).__name__})
+        tokens["llm_calls"] += u["llm_calls"]
+        meta = {"step": step + 1, "action": type(action).__name__}
+        if getattr(agent, "model_version", None):
+            meta["model"] = agent.model_version
+        step_ev = col.emit("agent_step", usage={k: u[k] for k in ("input_tokens", "output_tokens")}, metadata=meta)
 
         if isinstance(action, FinalAnswer):
             final_message = action.text
@@ -181,7 +191,10 @@ def run_episode(
             break
 
         if not isinstance(action, ToolCall):
-            raise TypeError(f"agent returned {type(action).__name__}; expected ToolCall or FinalAnswer")
+            col.emit("guardrail", actor="environment", parent_event_id=step_ev.event_id,
+                     message=f"Agent returned {type(action).__name__}; expected ToolCall or FinalAnswer")
+            termination = "agent_error"
+            break
         idx = len(actions)
         call_ev = col.emit("tool_call", parent_event_id=step_ev.event_id,
                            tool={"name": action.tool, "arguments": copy.deepcopy(action.args)})

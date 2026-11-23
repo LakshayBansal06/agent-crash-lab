@@ -173,6 +173,7 @@ h3 { font-size: 15px; line-height: 1.35; }
   transition: transform .12s ease;
 }
 .cell.fail { background: var(--fail); }
+.cell.skip, .dot.skip { background: repeating-linear-gradient(-45deg, var(--line-strong) 0 2px, var(--raised) 2px 5px); }
 .cell.faulted { background-image: linear-gradient(to top, var(--ink) 0 4px, transparent 4px); }
 .cell:hover, .cell:focus-visible { transform: scaleY(1.18); }
 .wall-score { text-align: right; font-weight: 700; font-size: 15px; }

@@ -3,10 +3,11 @@
 Plug any model into the same harness the reference agents use:
 
     export ANTHROPIC_API_KEY=...
-    crashlab run --agent llm --suite refund-reliability
+    crashlab run --agents v2 llm --repeats 2
 
 The HTTP transport is injectable, so the loop is unit-tested offline with a
-fake transport (see tests/test_llm_agent.py).
+fake transport (see tests/test_interfaces.py). Calls use temperature 0, report
+their real token usage, and record the exact model version the provider served.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ import os
 from typing import Any
 from collections.abc import Callable
 
-from .base import Agent, FinalAnswer, Observation, ToolCall
+from .base import Agent, FinalAnswer, Observation, ProviderError, ToolCall
 
 API_URL = "https://api.anthropic.com/v1/messages"
 
@@ -30,31 +31,42 @@ RETRY_STATUS = {408, 429, 500, 502, 503, 504, 529}  # provider overloaded or bri
 
 
 def post_with_retry(url: str, body: dict[str, Any], headers: dict[str, str], *, attempts: int = 5,
-                    sleep: Callable[[float], None] | None = None, post: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """POST to a model API, retrying transient failures with exponential backoff (honouring Retry-After).
-    A model provider's hiccup must not be scored as a failure of the agent under test."""
+                    budget_s: float = 90.0, sleep: Callable[[float], None] | None = None,
+                    post: Callable[..., Any] | None = None, clock: Callable[[], float] | None = None) -> dict[str, Any]:
+    """POST to a model API, retrying transient failures with exponential backoff (honouring Retry-After),
+    within a total time budget so an outage can't hold a worker for minutes per call. Anything that still
+    fails is raised as ProviderError: a provider hiccup must not be scored as a failure of the agent."""
     import time
 
     import httpx
 
-    sleep = sleep or time.sleep
-    post = post or httpx.post
+    sleep, post, clock = sleep or time.sleep, post or httpx.post, clock or time.monotonic
+    start, last = clock(), "no attempt made"
     for attempt in range(attempts):
         try:
-            r = post(url, json=body, timeout=60, headers=headers)
-        except (httpx.TimeoutException, httpx.TransportError):
-            if attempt == attempts - 1:
-                raise
+            r = post(url, json=body, timeout=min(60.0, max(5.0, budget_s - (clock() - start))), headers=headers)
+        except httpx.TransportError as exc:  # timeouts are transport errors too
+            last = f"{type(exc).__name__}: {exc}"
         else:
-            if r.status_code not in RETRY_STATUS or attempt == attempts - 1:
-                r.raise_for_status()
+            if r.status_code < 400:
                 return r.json()
+            last = f"HTTP {r.status_code}: {r.text[:200]}"
+            if r.status_code not in RETRY_STATUS:
+                break  # a bad key or a malformed request won't fix itself
             wait = r.headers.get("retry-after", "")
+            if wait.isdigit() and float(wait) > 30:
+                break  # e.g. a daily quota: retrying for minutes cannot succeed
             if wait.isdigit():
-                sleep(min(float(wait), 30.0))
+                pause = float(wait)
+                if clock() - start + pause > budget_s:
+                    break
+                sleep(pause)
                 continue
-        sleep(min(2.0 ** attempt, 20.0))
-    raise RuntimeError("unreachable")
+        pause = min(2.0 ** attempt, 20.0)
+        if attempt == attempts - 1 or clock() - start + pause > budget_s:
+            break
+        sleep(pause)
+    raise ProviderError(f"model provider failed: {last}")
 
 
 def _http_transport(body: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover - needs network
@@ -68,6 +80,7 @@ def _http_transport(body: dict[str, Any]) -> dict[str, Any]:  # pragma: no cover
 class LLMToolAgent(Agent):
     name = "llm-agent"
     framework = "anthropic-messages"
+    reports_usage = True
 
     def __init__(self, model: str | None = None, transport: Transport | None = None, max_tokens: int = 1024) -> None:
         self.model = model or os.environ.get("CRASHLAB_MODEL", "claude-sonnet-5-5")
@@ -96,9 +109,12 @@ class LLMToolAgent(Agent):
                 self.messages.append({"role": "user", "content": self.results})
                 self.results = []
             resp = self.transport({
-                "model": self.model, "max_tokens": self.max_tokens, "system": self.system,
+                "model": self.model, "max_tokens": self.max_tokens, "system": self.system, "temperature": 0,
                 "tools": self.tools, "messages": self.messages,
             })
+            usage = resp.get("usage") or {}
+            self._add_usage(usage.get("input_tokens", 0), usage.get("output_tokens", 0))
+            self.model_version = resp.get("model") or self.model
             content = resp.get("content", [])
             self.messages.append({"role": "assistant", "content": content})
             self.pending = [b for b in content if b.get("type") == "tool_use"]
@@ -134,6 +150,7 @@ class GeminiToolAgent(Agent):
 
     name = "gemini-agent"
     framework = "gemini-generate-content"
+    reports_usage = True
 
     def __init__(self, model: str | None = None, transport: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
                  max_tokens: int = 1024) -> None:
@@ -164,7 +181,11 @@ class GeminiToolAgent(Agent):
                 self.results = []
             out = self.transport(self.model, {
                 "systemInstruction": {"parts": [{"text": self.system}]}, "contents": self.contents,
-                "tools": self.tool_decls, "generationConfig": {"maxOutputTokens": self.max_tokens}})
+                "tools": self.tool_decls, "generationConfig": {"maxOutputTokens": self.max_tokens, "temperature": 0}})
+            meta = out.get("usageMetadata") or {}
+            self._add_usage(meta.get("promptTokenCount", 0),
+                            meta.get("candidatesTokenCount", 0) + meta.get("thoughtsTokenCount", 0))
+            self.model_version = out.get("modelVersion") or self.model
             content = ((out.get("candidates") or [{}])[0].get("content")) or {"role": "model", "parts": []}
             self.contents.append(content)  # echoed verbatim: Gemini needs its thought signatures back
             parts = content.get("parts", [])

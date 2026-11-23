@@ -40,10 +40,29 @@ class Observation:
 Action = ToolCall | FinalAnswer
 
 
+class ProviderError(RuntimeError):
+    """The model provider (Anthropic, Google) failed after retries: an outage, a quota, a bad key.
+    It says nothing about the agent's behaviour, so the run is inconclusive, never a failure."""
+
+
 class Agent:
     name = "agent"
     version = "0.0.0"
     framework = "custom-python"
+    reports_usage = False  # True for model-backed agents: the runner records their real token counts
+
+    def pop_usage(self) -> dict[str, int]:
+        """Tokens spent since the last call (model-backed agents only); resets the counter."""
+        u = getattr(self, "_usage", None) or {"input_tokens": 0, "output_tokens": 0, "llm_calls": 0}
+        self._usage = None
+        return u
+
+    def _add_usage(self, input_tokens: int, output_tokens: int) -> None:
+        u = getattr(self, "_usage", None) or {"input_tokens": 0, "output_tokens": 0, "llm_calls": 0}
+        u["input_tokens"] += int(input_tokens or 0)
+        u["output_tokens"] += int(output_tokens or 0)
+        u["llm_calls"] += 1
+        self._usage = u
 
     def reset(self, task: str, tools: list[dict[str, Any]], context: dict[str, Any], rng: random.Random) -> None:
         raise NotImplementedError

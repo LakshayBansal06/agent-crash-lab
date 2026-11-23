@@ -1,4 +1,4 @@
-from .base import Agent, FinalAnswer, Observation, ScriptedAgent, ToolCall
+from .base import Agent, FinalAnswer, Observation, ProviderError, ScriptedAgent, ToolCall
 from .support import SupportAgentV1, SupportAgentV2
 
 REGISTRY = {
@@ -59,5 +59,5 @@ class ReplayAgent(Agent):
         return FinalAnswer(a.text or "") if a.kind == "final" else ToolCall(a.tool, dict(a.args))
 
 
-__all__ = ["LLM_REFS", "missing_key", "Agent", "ToolCall", "FinalAnswer", "Observation", "ScriptedAgent", "make_agent", "REGISTRY",
+__all__ = ["LLM_REFS", "missing_key", "ProviderError", "Agent", "ToolCall", "FinalAnswer", "Observation", "ScriptedAgent", "make_agent", "REGISTRY",
            "ReplayAgent", "SupportAgentV1", "SupportAgentV2"]

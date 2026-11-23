@@ -25,6 +25,10 @@
     fail: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
     flaky: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5l6 11H2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8 7v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
   };
+  // A run whose model provider failed (outage, quota) has no verdict: grey, never red.
+  const inconclusive = (r) => r.status === "INCONCLUSIVE";
+  const verdictCls = (r) => (inconclusive(r) ? "skip" : r.passed ? "" : "fail");
+  const verdictText = (r) => (inconclusive(r) ? "Inconclusive (model provider error)" : r.passed ? "Passed" : titleCase(r.primary_category));
   const statusHtml = (st, text) => `<span class="status ${st}">${ICON[st] || ""}${esc(text ?? st)}</span>`;
 
   // ---- auth: the key lives in sessionStorage (this tab only) and is sent as a Bearer header
@@ -569,7 +573,7 @@
       const s = summary(ref);
       const groups = sids.map((sid) => {
         const rs = runs.filter((r) => r.agent_ref === ref && r.scenario_id === sid).sort((a, b) => a.repeat - b.repeat);
-        return `<div class="wall-group">${rs.map((r) => `<button class="cell ${r.passed ? "" : "fail"} ${r.faults_activated?.length ? "faulted" : ""}" data-run="${esc(r.run_id)}" aria-label="${esc(`${esc(sid)} repeat ${esc(r.repeat + 1)}: ${r.passed ? "passed" : "failed"}`)}"></button>`).join("")}</div>`;
+        return `<div class="wall-group">${rs.map((r) => `<button class="cell ${verdictCls(r)} ${r.faults_activated?.length ? "faulted" : ""}" data-run="${esc(r.run_id)}" aria-label="${esc(`${esc(sid)} repeat ${esc(r.repeat + 1)}: ${r.passed ? "passed" : "failed"}`)}"></button>`).join("")}</div>`;
       }).join("");
       return `<div class="wall-row"><div class="wall-label"><i class="swatch" style="background:${seriesVar(ref)}"></i>${esc(agentShort(ref))}</div>
         <div class="wall-cells">${groups}</div><div class="wall-score">${pct(s.success_rate, 0)}<small>${esc(s.successes)}/${esc(s.episodes)} passed</small></div></div>`;
@@ -585,7 +589,7 @@
       c.addEventListener("click", () => (location.hash = `#/traces/${encodeURIComponent(r.run_id)}`));
       c.addEventListener("mousemove", (e) => tipShow(`<div class="t">${esc(r.scenario_title || r.scenario_id)}</div>
         <div class="r"><span>${esc(r.scenario_id)} · repeat ${esc(r.repeat + 1)}</span></div>
-        <div class="r"><span>Result</span><b>${r.passed ? "Passed" : esc(titleCase(r.primary_category))}</b></div>
+        <div class="r"><span>Result</span><b>${esc(verdictText(r))}</b></div>
         <div class="r"><span>Score</span><b>${fmt1(r.score)}</b></div>
         <div class="r"><span>Steps · time</span><b>${esc(r.steps)} · ${secs(r.duration_ms)}</b></div>`, e));
       c.addEventListener("mouseleave", tipHide);
@@ -652,7 +656,7 @@
               ag.map((ref) => {
                 const rs = runs.filter((r) => r.agent_ref === ref && r.scenario_id === sid).sort((a, b) => a.repeat - b.repeat);
                 const ps = summary(ref).per_scenario[sid];
-                return `<td class="dots">${rs.map((r) => `<button class="dot ${r.passed ? "" : "fail"}" data-run="${esc(r.run_id)}" aria-label="repeat ${esc(r.repeat + 1)} ${r.passed ? "passed" : "failed"}"></button>`).join("")}</td><td class="num">${pct(ps.pass_hat_k.at(-1), 0)}</td>`;
+                return `<td class="dots">${rs.map((r) => `<button class="dot ${verdictCls(r)}" data-run="${esc(r.run_id)}" aria-label="repeat ${esc(r.repeat + 1)} ${r.passed ? "passed" : "failed"}"></button>`).join("")}</td><td class="num">${pct(ps.pass_hat_k.at(-1), 0)}</td>`;
               }).join("") + "</tr>";
           }).join("")}</tbody></table></div>
       </section>`;
@@ -818,7 +822,7 @@
       const list = runs.filter((r) => (!filt.agent || r.agent_ref === filt.agent) && (!filt.result || (filt.result === "pass") === r.passed)
         && (!filt.scenario || r.scenario_id === filt.scenario));
       $("#run-list").innerHTML = list.slice(0, 400).map((r) => `<button data-run="${esc(r.run_id)}" aria-pressed="${r.run_id === pick}">
-        <i class="swatch" style="background:${r.passed ? "var(--pass)" : "var(--fail)"}"></i>
+        <i class="swatch" style="background:${inconclusive(r) ? "var(--line-strong)" : r.passed ? "var(--pass)" : "var(--fail)"}"></i>
         <span><span class="t">${esc(r.scenario_id.slice(-4))} · ${esc(agentShort(r.agent_ref))} · r${esc(r.repeat + 1)}</span><br><span class="m">${esc(r.passed ? "passed" : titleCase(r.primary_category))}</span></span>
         <span class="m">${esc(r.steps)}</span></button>`).join("") || '<div class="empty">No runs match</div>';
       $("#run-list").querySelectorAll("button").forEach((b) => (b.onclick = () => (location.hash = `#/traces/${encodeURIComponent(b.dataset.run)}`)));
@@ -1125,7 +1129,7 @@
         $("#bar").style.width = `${(d.done / d.total) * 100}%`;
         $("#count").textContent = `${d.done} of ${d.total} episodes complete`;
         const b = document.createElement("span");
-        b.className = "cell" + (d.passed ? "" : " fail"); b.title = `${d.scenario_id} · ${d.agent_ref} · ${d.passed ? "passed" : d.primary_category}`;
+        b.className = "cell " + verdictCls(d); b.title = `${d.scenario_id} · ${d.agent_ref} · ${d.passed ? "passed" : d.primary_category}`;
         cells.appendChild(b);
         const tk = $("#ticker");
         tk.insertAdjacentHTML("afterbegin", (d.events || []).filter((e) => ["tool_call", "fault_activated", "invariant_breach", "final_answer"].includes(e.event_type)).slice(-4).map((e) => eventRow(e, {})).join(""));

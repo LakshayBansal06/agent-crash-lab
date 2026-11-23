@@ -63,21 +63,72 @@ def test_llm_agent_loop_with_fake_transport():
 
 def test_model_calls_retry_transient_provider_errors():
     import httpx
+    import pytest
 
+    from crashlab.agents import ProviderError
     from crashlab.agents.llm import post_with_retry
 
     req = httpx.Request("POST", "https://api.example")
-    replies = iter([httpx.Response(503, request=req), httpx.Response(429, headers={"retry-after": "2"}, request=req),
-                    httpx.Response(200, json={"ok": True}, request=req)])
+
+    def calls(*replies):
+        it = iter(replies)
+
+        def post(*a, **k):
+            r = next(it)
+            if isinstance(r, Exception):
+                raise r
+            return r
+        return post
+
     slept = []
-    out = post_with_retry("https://api.example", {}, {}, sleep=slept.append, post=lambda *a, **k: next(replies))
-    assert out == {"ok": True} and slept == [1.0, 2.0]  # backoff, then the server's Retry-After
-    bad = iter([httpx.Response(400, request=req)])
+    out = post_with_retry("u", {}, {}, sleep=slept.append, post=calls(
+        httpx.Response(503, request=req), httpx.ReadTimeout("slow", request=req),
+        httpx.Response(429, headers={"retry-after": "2"}, request=req), httpx.Response(200, json={"ok": True}, request=req)))
+    assert out == {"ok": True} and slept == [1.0, 2.0, 2.0]  # backoff, a timeout retried, then Retry-After
+    with pytest.raises(ProviderError, match="HTTP 400"):  # a bad request is not retried
+        post_with_retry("u", {}, {}, sleep=slept.append, post=calls(httpx.Response(400, request=req)))
+    slept.clear()
+    with pytest.raises(ProviderError, match="HTTP 429"):  # a daily quota (Retry-After in hours) gives up at once
+        post_with_retry("u", {}, {}, sleep=slept.append, post=calls(
+            httpx.Response(429, headers={"retry-after": "51184"}, request=req)))
+    assert slept == []
+    now = [0.0]
+    with pytest.raises(ProviderError):  # an outage stops at the time budget, not after minutes of retries
+        post_with_retry("u", {}, {}, budget_s=10, clock=lambda: now[0],
+                        sleep=lambda t: now.__setitem__(0, now[0] + t),
+                        post=calls(*[httpx.Response(503, request=req)] * 5))
+    assert now[0] <= 10
+
+
+def test_provider_errors_are_inconclusive_and_real_usage_is_recorded():
+    from crashlab.agents import ProviderError, make_agent
+    from crashlab.agents.llm import GeminiToolAgent
+    from crashlab.experiment import run_experiment
+
+    reply = {"candidates": [{"content": {"role": "model", "parts": [{"text": "Your refund is on its way."}]}}],
+             "usageMetadata": {"promptTokenCount": 1200, "candidatesTokenCount": 30}, "modelVersion": "gemini-x-001"}
+    sc = scenario_by_id("ACL-ECOM-0001")
+    ep = run_episode(sc, GeminiToolAgent(model="fake", transport=lambda m, b: reply), 1, "real")
+    assert ep.usage["input_tokens"] == 1200 and ep.usage["output_tokens"] == 30 and ep.usage["llm_calls"] == 1
+    step = next(e for e in ep.events if e["event_type"] == "agent_step")
+    assert step["metadata"]["model"] == "gemini-x-001"
+
+    def down(model, body):
+        raise ProviderError("model provider failed: HTTP 503")
+
+    ep = run_episode(sc, GeminiToolAgent(model="fake", transport=down), 1, "down")
+    assert ep.termination == "provider_error"
+
+    import crashlab.experiment as ex
+    real_make = ex.make_agent
+    ex.make_agent = lambda ref: GeminiToolAgent(model="fake", transport=down) if ref == "gemini" else real_make(ref)
     try:
-        post_with_retry("https://api.example", {}, {}, sleep=slept.append, post=lambda *a, **k: next(bad))
-        raise AssertionError("a 400 must not be retried")
-    except httpx.HTTPStatusError:
-        pass
+        res = run_experiment(["v2", "gemini"], [sc], repeats=2, minimize_failures=False)
+    finally:
+        ex.make_agent = real_make
+    g = res["summaries"]["gemini"]
+    assert g["inconclusive"] == 2 and g["episodes"] == 0 and not res["failures"]  # never counted as agent failures
+    assert res["summaries"]["v2"]["episodes"] == 2 and make_agent("v2")
 
 
 def test_model_agents_refuse_to_run_without_a_key(tmp_path, monkeypatch, capsys):

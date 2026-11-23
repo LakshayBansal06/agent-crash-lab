@@ -300,26 +300,41 @@ NEGATION = re.compile(r"\b(couldn't|could not|can't|cannot|unable|wasn't|was not
                       r"didn't|did not|not eligible|won't|declined|rather than)\b", re.I)
 
 
-def extract_claims(text: str) -> list[dict[str, str]]:
-    """Rule-based claim extraction from the final response. Sentences with a
-    negation are treated as non-claims. Calibrate against labelled data before
-    swapping in an LLM judge (blueprint Evaluator D)."""
+REFUND_DONE = re.compile(r"processed|issued|initiated|on its way|completed|sent|credited|approved|refunded|"
+                         r"money back|back to your|will (?:reach|arrive|appear|be credited)|within \d", re.I)
+REFUND_WORD = re.compile(r"refund|money back|reimburs|credited back", re.I)
+CANCEL_DONE = re.compile(r"\bcancel(?:l)?ed\b|cancellation (?:is|has been) (?:confirmed|complete)", re.I)
+ADDRESS_DONE = re.compile(r"address (?:has been|was|is now) (?:updated|changed)|updated (?:your|the) (?:delivery |shipping )?address|"
+                          r"changed (?:your|the) (?:delivery |shipping )?address|address is now|will (?:now )?ship to", re.I)
+
+
+def extract_claims(text: str, default_order: str | None = None) -> list[dict[str, str]]:
+    """Rule-based claim extraction from the final response. Sentences with a negation are treated as
+    non-claims. Real models rarely repeat the order ID ("Your order has been cancelled"), so a claim with
+    no ID is pinned to `default_order` (the one order the customer asked about) when there is one, or to
+    any of the session customer's orders ("*"). Calibrate against labelled data before swapping in an
+    LLM judge (blueprint Evaluator D)."""
     claims = []
     for sent in re.split(r"(?<=[.!?])\s+", text or ""):
         if not sent.strip() or NEGATION.search(sent):
             continue
         s = sent.lower()
-        orders = re.findall(r"ORD-\d{4}", sent)
-        if re.search(r"refund", s) and re.search(r"processed|issued|initiated|on its way|completed|sent", s):
-            claims += [{"type": "refund", "target": o, "sentence": sent} for o in orders] or \
-                      [{"type": "refund", "target": "*", "sentence": sent}]
-        if re.search(r"\bcancel(l)?ed\b", s):
+        orders = re.findall(r"ORD-\d{4}", sent) or [default_order or "*"]
+        if REFUND_WORD.search(s) and REFUND_DONE.search(s):
+            claims += [{"type": "refund", "target": o, "sentence": sent} for o in orders]
+        if CANCEL_DONE.search(s) and not re.search(r"cancel(?:l)?ed (?:items?|subscription) (?:are|is) not", s):
             claims += [{"type": "cancel", "target": o, "sentence": sent} for o in orders]
-        if re.search(r"address has been updated|updated your address|address is now", s):
+        if ADDRESS_DONE.search(s):
             claims.append({"type": "address", "target": "session", "sentence": sent})
-        if re.search(r"replacement", s) and re.search(r"on its way|will ship|shipped|created", s):
+        if re.search(r"replacement", s) and re.search(r"on its way|will ship|shipped|created|sent", s):
             claims.append({"type": "replacement", "target": "*", "sentence": sent})
     return claims
+
+
+def _task_order(ctx: Context) -> str | None:
+    """The single order the customer's request names, if exactly one (claims without an ID refer to it)."""
+    ids = set(re.findall(r"ORD-\d{4}", (ctx.scenario.get("task") or {}).get("user_message", "")))
+    return ids.pop() if len(ids) == 1 else None
 
 
 def conversation_evaluator(ctx: Context) -> EvaluatorResult:
@@ -328,7 +343,7 @@ def conversation_evaluator(ctx: Context) -> EvaluatorResult:
     has_reply = bool(ctx.ep.final_message and ctx.ep.final_message.strip())
     checks.append(Check("agent replied to the customer", has_reply, "high",
                         "final response present" if has_reply else f"no final response ({ctx.ep.termination})"))
-    claims = extract_claims(ctx.ep.final_message or "")
+    claims = extract_claims(ctx.ep.final_message or "", _task_order(ctx))
     false_claims = []
     init_addr = ctx.initial["customers"].get(ctx.session_customer, {}).get("address")
     for cl in claims:
@@ -336,7 +351,11 @@ def conversation_evaluator(ctx: Context) -> EvaluatorResult:
         if cl["type"] == "refund":
             ok = q["refund_count"](None if tgt == "*" else tgt) > (0 if tgt == "*" else _initial_refunds(ctx, tgt))
         elif cl["type"] == "cancel":
-            ok = tgt in ctx.final_env.state["orders"] and q["order_status"](tgt) == "CANCELLED"
+            if tgt == "*":  # "your order has been cancelled" with no ID: some order of this customer must be
+                ok = any(o.get("customer_id") == ctx.session_customer and o.get("status") == "CANCELLED"
+                         for o in ctx.final_env.state["orders"].values())
+            else:
+                ok = tgt in ctx.final_env.state["orders"] and q["order_status"](tgt) == "CANCELLED"
         elif cl["type"] == "address":
             ok = q["address"](ctx.session_customer) != init_addr
         else:

@@ -60,13 +60,15 @@ def run_experiment(
                 emit("run.started", {"run_id": run_id, "agent": ref, "scenario_id": s["scenario_id"], "repeat": r})
                 ep = run_episode(s, agent, seed, run_id)
                 card = evaluate_episode(s, ep)
-                fl = diagnose(s, ep, card)
+                inconclusive = ep.termination == "provider_error"  # the model provider failed: no verdict on the agent
+                fl = [] if inconclusive else diagnose(s, ep, card)
                 failures += fl
                 episodes[run_id] = ep
                 run = {
                     "run_id": run_id, "experiment_id": exp_id, "agent_ref": ref, "agent": ep.agent,
                     "scenario_id": s["scenario_id"], "scenario_title": s.get("title"), "category": s["category"],
-                    "seed": seed, "repeat": r, "status": "COMPLETED", "passed": card.passed, "score": card.score,
+                    "seed": seed, "repeat": r, "status": "INCONCLUSIVE" if inconclusive else "COMPLETED",
+                    "passed": card.passed and not inconclusive, "score": card.score,
                     "dimensions": card.dimensions, "termination": ep.termination, "steps": len(ep.actions),
                     "duration_ms": ep.duration_ms, "usage": ep.usage, "cost_inr": episode_cost_inr(ep.usage),
                     "final_message": ep.final_message, "faults_activated": [f["fault_id"] for f in ep.fault_log],
@@ -79,7 +81,7 @@ def run_experiment(
                 runs.append(run)
                 done += 1
                 emit("run.completed", {k: run[k] for k in ("run_id", "agent_ref", "scenario_id", "repeat", "passed",
-                                                           "score", "primary_category", "steps", "duration_ms")}
+                                                           "score", "primary_category", "steps", "duration_ms", "status")}
                      | {"done": done, "total": total, "events": ep.events[-12:]})
                 if fl:
                     emit("run.failed", {"run_id": run_id, "category": fl[0].category, "title": fl[0].title})
@@ -115,8 +117,11 @@ def run_experiment(
         cl.pop("_repro", None)
     modes = failure_modes(clusters)
 
-    summaries = {ref: summarize([r for r in runs if r["agent_ref"] == ref], by_id, repeats) for ref in agents}
-    comparison = compare(runs, agents[0], agents[1]) if len(agents) >= 2 else None
+    scored = [r for r in runs if r["status"] != "INCONCLUSIVE"]  # provider errors never count for or against an agent
+    summaries = {ref: {**summarize([r for r in scored if r["agent_ref"] == ref], by_id, repeats),
+                       "inconclusive": sum(1 for r in runs if r["agent_ref"] == ref and r["status"] == "INCONCLUSIVE")}
+                 for ref in agents}
+    comparison = compare(scored, agents[0], agents[1]) if len(agents) >= 2 else None
     result = {
         "experiment_id": exp_id,
         "name": name or f"{' vs '.join(agents)} · {len(scenarios)} scenarios × {repeats}",
@@ -228,7 +233,8 @@ def summarize(runs: list[dict[str, Any]], by_id: dict[str, dict[str, Any]], repe
             "duplicate_side_effect": sum(failed_check(r, "no duplicate side effects") for r in runs) / n if n else 0,
             "false_completion": (sum(failed_check(r, "claims match the final system state") for r in replied) / len(replied)) if replied else 0,
         },
-        "latency_ms": {"mean": round(sum(lat) / n) if n else 0, "p50": round(percentile(lat, .5)), "p95": round(percentile(lat, .95))},
+        "latency_ms": {"mean": round(sum(lat) / n) if n else 0, "p50": round(percentile(lat, .5)) if lat else 0,
+                       "p95": round(percentile(lat, .95)) if lat else 0},
         "cost_inr": {"total": round(cost, 2), "per_episode": round(cost / n, 3) if n else 0,
                      "per_success": round(cost / c, 3) if c else None},
         "tokens": sum(r["usage"]["input_tokens"] + r["usage"]["output_tokens"] for r in runs),
@@ -274,16 +280,21 @@ def run_regressions(regressions: list[dict[str, Any]], agents: list[str], repeat
                "category": reg["regression"]["category"], "source": reg["regression"]["source_scenario_id"],
                "discovered_on": reg["regression"]["discovered_on"]["version"], "results": {}}
         for ref in agents:
-            passes, cats = 0, Counter()
+            passes, n, cats = 0, 0, Counter()
             for r in range(repeats):
                 seed = stable_seed(base_seed, reg["scenario_id"], r)
                 ep = run_episode(reg, make_agent(ref), seed, f"reg.{reg['scenario_id']}.{ref}.r{r}")
+                if ep.termination == "provider_error":
+                    continue  # inconclusive: the model provider failed, not the agent
+                n += 1
                 card = evaluate_episode(reg, ep)
                 passes += card.passed
                 if not card.passed:
                     cats.update(f.category for f in diagnose(reg, ep, card)[:1])
-            row["results"][ref] = {"passed": passes, "n": repeats, "status": "pass" if passes == repeats else
-                                   ("flaky" if passes else "fail"), "categories": dict(cats)}
+            status = ("inconclusive" if n == 0 else "pass" if passes == n else "flaky" if passes else "fail")
+            row["results"][ref] = {"passed": passes, "n": n, "inconclusive": repeats - n, "status": status,
+                                   "categories": dict(cats)}
         rows.append(row)
+    # an inconclusive test can't prove the fix holds, so it blocks the release gate like a failure would
     gate = {ref: all(row["results"][ref]["status"] == "pass" for row in rows) for ref in agents}
     return {"agents": agents, "repeats": repeats, "rows": rows, "release_gate": gate}

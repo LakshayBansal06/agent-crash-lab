@@ -118,3 +118,22 @@ def test_validation_rejects_bad_scenarios():
     sc = dict(scenario_by_id("ACL-ECOM-0001"))
     sc["faults"] = [{"type": "timeout_after_commit", "target": "launch_rockets"}]
     assert not validate_scenario(sc).ok
+
+
+def test_false_claims_without_an_order_id_are_caught():
+    # Review item 6: real models rarely repeat the order ID.
+    from crashlab.agents.base import Agent, FinalAnswer
+
+    class Bluffer(Agent):
+        def reset(self, task, tools, context, rng):
+            pass
+
+        def act(self, observation):
+            return FinalAnswer("All sorted! You'll get your money back in 5-7 days.")  # but no refund was issued
+
+    sc = scenario_by_id("ACL-ECOM-0001")
+    card = evaluate_episode(sc, run_episode(sc, Bluffer(), 1, "bluff"))
+    failed = {g["name"] for g in card.to_dict()["gating_failures"]}
+    assert "claims match the final system state" in failed
+    assert [c["target"] for c in extract_claims("Your order has been cancelled.", "ORD-1001")] == ["ORD-1001"]
+    assert extract_claims("I could not cancel your order.", "ORD-1001") == []

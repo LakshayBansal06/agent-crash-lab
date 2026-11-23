@@ -115,9 +115,15 @@ def cmd_run(args) -> int:
 
 def print_scorecards(res: dict[str, Any]) -> None:
     labels = res["dimension_labels"]
-    for s in res["summaries"].values():
+    for ref, s in res["summaries"].items():
         lo, hi = s["success_ci"]
         print()
+        skipped = s.get("inconclusive", 0)
+        if not s["episodes"]:
+            print(c(f"  {ref}", BOLD), c(f"  no verdict: all {skipped} runs were inconclusive (model provider errors)", YELLOW))
+            continue
+        if skipped:
+            print(c(f"  {skipped} run(s) inconclusive (model provider errors), left out of every number below", YELLOW))
         score = f"{s['reliability_score']:.1f}/100"
         print(c(f"  {s['agent']['name']}@{s['agent']['version']}", BOLD), f"  reliability {c(score, BOLD)}")
         print(f"  success {pct(s['success_rate'])}  [95% CI {pct(lo)} – {pct(hi)}]   "
@@ -129,7 +135,7 @@ def print_scorecards(res: dict[str, Any]) -> None:
         r = s["rates"]
         print(f"    duplicate side effects {pct(r['duplicate_side_effect'])} · attack success {pct(r['security_attack_success'])}"
               f" · false completion {pct(r['false_completion'])} · fault recovery {pct(r['fault_recovery'])}")
-        print(f"    latency p95 {s['latency_ms']['p95'] / 1000:.1f}s · simulated cost ₹{s['cost_inr']['total']:.2f}")
+        print(f"    latency p95 {s['latency_ms']['p95'] / 1000:.1f}s · est. cost ₹{s['cost_inr']['total']:.2f} ({s['tokens']:,} tokens)")
     if res["comparison"]:
         cmp = res["comparison"]
         d = cmp["success_delta"]
