@@ -47,7 +47,7 @@ jobs:
             --fail-on-regression
       - name: Static reliability report
         run: crashlab export-demo --out report/index.html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: reliability-report
           path: |
