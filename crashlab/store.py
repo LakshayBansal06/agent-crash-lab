@@ -104,6 +104,12 @@ MIGRATIONS: list[str] = [
       expires_at REAL NOT NULL, used_at TEXT
     );
     """,
+    # 7 - real-model spend: episodes reserved per project per UTC day (Claude/Gemini cost real money)
+    """
+    CREATE TABLE model_usage (
+      project_id TEXT NOT NULL, day TEXT NOT NULL, episodes INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (project_id, day)
+    );
+    """,
 ]
 SESSION_DAYS = 14
 RESET_MINUTES = 60
@@ -284,8 +290,12 @@ class Store:
         return self.get_user(row["id"]) if row else None
 
     def link_google(self, uid: str, sub: str) -> None:
+        """Attach a Google identity to an existing account. Password sign-up never proved who owns the
+        email, so a password set before this link could belong to an impostor who signed up first:
+        drop it and sign every device out. The verified owner can add a new password on /account."""
         with self._lock, self.db:
-            self.db.execute("UPDATE users SET google_sub=? WHERE id=?", (sub, uid))
+            self.db.execute("UPDATE users SET google_sub=?, password_hash=NULL WHERE id=?", (sub, uid))
+            self.db.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
 
     def verify_login(self, email: str, password: str) -> dict[str, Any] | None:
         row = self.db.execute("SELECT id, password_hash FROM users WHERE email=?", (email.strip(),)).fetchone()
@@ -314,6 +324,20 @@ class Store:
 
     def count_admins(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM users WHERE role='admin' AND disabled_at IS NULL").fetchone()[0]
+
+    def reserve_model_episodes(self, project_id: str, episodes: int, daily_limit: int) -> int | None:
+        """Book `episodes` real-model episodes against today's budget. Returns what is left after booking,
+        or None (and books nothing) when the booking would cross `daily_limit`."""
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        with self._lock, self.db:
+            row = self.db.execute("SELECT episodes FROM model_usage WHERE project_id=? AND day=?", (project_id, day)).fetchone()
+            used = row["episodes"] if row else 0
+            if used + episodes > daily_limit:
+                return None
+            self.db.execute("INSERT INTO model_usage(project_id, day, episodes) VALUES (?,?,?) "
+                            "ON CONFLICT(project_id, day) DO UPDATE SET episodes = episodes + excluded.episodes",
+                            (project_id, day, episodes))
+        return daily_limit - used - episodes
 
     def create_session(self, uid: str) -> str:
         token = secrets.token_urlsafe(32)

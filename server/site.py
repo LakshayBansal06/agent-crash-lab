@@ -36,7 +36,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from .observability import log
-from .security import SESSION_COOKIE, public_url
+from .security import SESSION_COOKIE, client_ip, public_url
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SITE_DIR = WEB_DIR / "site"
@@ -608,7 +608,7 @@ def mount_site(app: FastAPI, *, verifier: Callable[[str, str, str | None], bool]
 
     @app.post("/contact", include_in_schema=False)
     async def contact_submit(request: Request) -> Response:
-        ip = request.client.host if request.client else None
+        ip = client_ip(request)
         if limiter.check("ip:" + (ip or "?"), "contact"):
             return contact_page(request, error="Too many messages from your network. Please try again in a few minutes.",
                                 status=429)

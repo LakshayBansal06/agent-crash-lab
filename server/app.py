@@ -58,11 +58,14 @@ from crashlab.store import Principal, Store
 from .observability import Metrics, log
 from .auth import mount_auth, print_setup_link
 from .site import mount_site
-from .security import (DOCS_CSP, ID_PATTERN, MAX_BODY_BYTES, SECURITY_HEADERS, auth_mode, classify, client_id, cors_origins,
+from .security import (DOCS_CSP, ID_PATTERN, MAX_BODY_BYTES, SECURITY_HEADERS, auth_mode, classify, client_id, client_ip, cors_origins,
                        rate_limiter, requires)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 API = "/api/v1"
+MODEL_MAX_REPEATS = 3
+
+
 def ID() -> Any:  # noqa: N802 - a fresh Path() per route; FastAPI binds the parameter name to the instance
     return PathParam(pattern=ID_PATTERN)
 
@@ -171,6 +174,23 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app.state.cache = cache = LRU()
     app.state.limiter = limiter = rate_limiter()
     pool = ThreadPoolExecutor(max_workers=int(os.environ.get("CRASHLAB_WORKERS", "2")))
+    model_per_run = int(os.environ.get("CRASHLAB_MODEL_EPISODES_PER_RUN", "60"))
+    model_per_day = int(os.environ.get("CRASHLAB_MODEL_EPISODES_PER_DAY", "200"))
+
+    def guard_model_spend(p: Principal, agents: list[str], scenarios: int, repeats: int) -> None:
+        """Claude and Gemini agents spend the server owner's API credit: admins only, small runs, a daily budget."""
+        model = [a for a in agents if a in LLM_REFS]
+        if not model:
+            return
+        if not p.can("admin"):
+            raise HTTPException(403, "real-model agents (Claude, Gemini) spend this server's API credit, so only admins can run them")
+        if repeats > MODEL_MAX_REPEATS:
+            raise HTTPException(422, f"real-model agents run at most {MODEL_MAX_REPEATS} repeats per scenario")
+        episodes = len(model) * scenarios * repeats
+        if episodes > model_per_run:
+            raise HTTPException(422, f"{episodes} real-model episodes requested; the limit per run is {model_per_run}")
+        if store.reserve_model_episodes(p.project_id, episodes, model_per_day) is None:
+            raise HTTPException(429, f"today's real-model budget ({model_per_day} episodes) is used up; it resets at 00:00 UTC")
     max_jobs = int(os.environ.get("CRASHLAB_MAX_RUNNING", "4"))
     log("startup", version=__version__, auth=mode, schema_version=store.schema_version, db=os.path.basename(store.path))
 
@@ -215,7 +235,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
             metrics.inc("http_request_seconds_sum", ms / 1000, route=tmpl)
             p = getattr(request.state, "principal", None)
             log("request", request_id=rid, method=request.method, route=tmpl, status=status, ms=ms,
-                key=getattr(p, "key_id", None), client=request.client.host if request.client else None)
+                key=getattr(p, "key_id", None), client=client_ip(request))
 
     @app.middleware("http")
     async def headers(request: Request, call_next):
@@ -383,6 +403,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
             sc = [s for s in sc if s["scenario_id"] in wanted]
             if not sc:
                 raise HTTPException(422, "no matching scenarios")
+        guard_model_spend(p, body.agents, len(sc), body.repeats)
         exp_id = f"exp_{uuid.uuid4().hex[:12]}"
         name = body.name or f"{' vs '.join(body.agents)} · {len(sc)} scenarios × {body.repeats}"
         store.create_experiment(exp_id, name, body.model_dump(), project_id=p.project_id)
@@ -553,6 +574,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 raise HTTPException(422, f"unknown agent {a!r}")
             if key := missing_key(a):
                 raise HTTPException(422, f"agent {a!r} needs {key} set on the server")
+        guard_model_spend(p, body.agents, len(regs), body.repeats)
         res = run_regressions(regs, body.agents, repeats=body.repeats)
         res["id"] = store.save_regression_run(res, p.project_id)
         return res

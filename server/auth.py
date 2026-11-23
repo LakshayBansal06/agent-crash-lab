@@ -35,7 +35,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from .observability import log
-from .security import SESSION_COOKIE, public_url, same_origin
+from .security import SESSION_COOKIE, client_ip, public_url, same_origin
 from .site import EMAIL_RE, LOGO, ga_id, layout, site_csp
 
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -194,7 +194,7 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
         """Common checks for every auth POST: same-site origin, then the per-IP rate limit."""
         if not same_origin(request):
             return "This form must be sent from this website."
-        ip = request.client.host if request.client else "?"
+        ip = client_ip(request)
         if limiter.check("ip:" + ip, "auth"):
             return "Too many attempts from your network. Wait a minute and try again."
         return None
@@ -621,7 +621,8 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
             return fail
         user = store.user_by_google(sub)
         if not user and (user := store.user_by_email(email)):
-            store.link_google(user["id"], sub)  # Google verified the address, so it's the same person
+            store.link_google(user["id"], sub)  # Google verified the address; any earlier password is revoked
+            log("google_linked", user=user["id"], password_revoked=bool(user["has_password"]))
         if not user:
             user = store.create_user(email, str(info.get("name") or email.split("@")[0])[:100], google_sub=sub)
             log("sign_up", user=user["id"], method="google")

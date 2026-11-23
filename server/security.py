@@ -143,11 +143,23 @@ def classify(method: str, path: str) -> str:
     return "expensive" if any(path.endswith(s) or s + "/" in path for s in EXPENSIVE) else "write"
 
 
+def client_ip(request: Request) -> str:
+    """The visitor's IP for rate limits and logs. Behind a proxy (Render), CRASHLAB_PROXY_HOPS=1 trusts only the
+    address the proxy itself appended: the right-most X-Forwarded-For entry. The left-most entries are whatever
+    the client sent and must never be trusted, or a forged header resets every per-IP limit."""
+    hops = int(os.environ.get("CRASHLAB_PROXY_HOPS", "0") or 0)
+    if hops > 0:
+        chain = [h.strip() for h in request.headers.get("x-forwarded-for", "").split(",") if h.strip()]
+        if chain:
+            return chain[-min(hops, len(chain))]
+    return request.client.host if request.client else "unknown"
+
+
 def client_id(request: Request) -> str:
     token = bearer(request)
     if token:
         return "k:" + hashlib.sha256(token.encode()).hexdigest()[:16]
-    return "ip:" + (request.client.host if request.client else "unknown")
+    return "ip:" + client_ip(request)
 
 
 # --------------------------------------------------------------------- headers

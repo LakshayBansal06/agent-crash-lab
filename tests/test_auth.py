@@ -192,3 +192,44 @@ def test_passwords_are_scrypt_hashed(app):
     signup(client(app))
     row = app.state.store.db.execute("SELECT password_hash FROM users").fetchone()[0]
     assert row.startswith("scrypt$") and PW not in row
+
+
+def test_google_link_revokes_an_impostors_password(app, monkeypatch):
+    # Review item 1: someone signs up with the admin's email first; the real owner later uses Google.
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "cid")
+    monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("CRASHLAB_ADMIN_EMAILS", "boss@example.com")
+    monkeypatch.setattr("server.auth.google_http", lambda m, u, **kw: {"access_token": "at"} if "token" in u else
+                        {"sub": "g-boss", "email": "boss@example.com", "email_verified": True, "name": "Boss"})
+    from server.app import create_app
+
+    app = create_app(app.state.store.path)
+    impostor = client(app)
+    signup(impostor, email="boss@example.com", name="Impostor", password="impostor password 1")
+    owner = client(app)
+    state = parse_qs(urlparse(owner.get("/auth/google").headers["location"]).query)["state"][0]
+    owner.get(f"/auth/google/callback?code=x&state={state}")
+    assert owner.get("/api/v1/whoami").json()["user"]["role"] == "admin"
+    assert impostor.get("/api/v1/whoami").status_code == 401  # the impostor's session is gone
+    r = client(app).post("/login", data={"email": "boss@example.com", "password": "impostor password 1"})
+    assert r.status_code == 401  # and their password no longer works
+
+
+def test_only_admins_spend_real_model_credit(app, monkeypatch):
+    # Review item 2: a free sign-up must not be able to burn the server's Gemini/Claude key.
+    monkeypatch.setenv("GEMINI_API_KEY", "server-key")
+    user = client(app)
+    signup(user)
+    r = user.post("/api/v1/experiments", json={"agents": ["gemini"], "repeats": 1, "scenario_ids": ["ACL-ECOM-0001"]})
+    assert r.status_code == 403 and "only admins" in r.json()["detail"]
+    admin = make_admin(app)
+    too_many = admin.post("/api/v1/experiments", json={"agents": ["gemini"], "repeats": 5})
+    assert too_many.status_code == 422 and "at most 3 repeats" in too_many.json()["detail"]
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "server-key")
+    too_big = admin.post("/api/v1/experiments", json={"agents": ["gemini", "llm"], "repeats": 3})  # 2 x 20 x 3 = 120
+    assert too_big.status_code == 422 and "limit per run is 60" in too_big.json()["detail"]
+    store = app.state.store
+    assert store.reserve_model_episodes("p_x", 200, 200) == 0 and store.reserve_model_episodes("p_x", 1, 200) is None
+    # built-in agents stay free for everyone
+    assert user.post("/api/v1/experiments", json={"agents": ["v2"], "repeats": 1,
+                                                   "scenario_ids": ["ACL-ECOM-0001"]}).status_code == 202

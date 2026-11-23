@@ -159,10 +159,16 @@ def test_cors_allowlist(tmp_path, monkeypatch):
 
 
 # --- 7. .env pushed to git -----------------------------------------------------------------
-def test_env_files_are_ignored_and_absent():
-    ignore = (ROOT / ".gitignore").read_text().split()
+def test_env_files_are_ignored_and_never_committed():
+    import shutil
+    import subprocess
+
+    ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
     assert ".env" in ignore and "*.db" in ignore
-    assert not (ROOT / ".env").exists()
+    # A local .env holding real keys is expected (the guide creates one); it must just never be tracked.
+    if shutil.which("git") and (ROOT / ".git").exists():
+        tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+        assert not [f for f in tracked if f == ".env" or f.endswith((".db", ".db-wal", ".db-shm"))]
 
 
 # --- 8. No rate limit ----------------------------------------------------------------------
@@ -319,3 +325,21 @@ def test_summary_keeps_minimization_stats(app):
     exp = run_small_experiment(c)
     rs = c.get(f"/api/v1/experiments/{exp}").json()["reproduction_summary"]
     assert rs["count"] >= 1 and rs["minimized_avg"] < rs["original_avg"]
+
+
+def test_forged_forwarded_for_cannot_reset_rate_limits(tmp_path, monkeypatch):
+    # Review item 3: behind Render, only the right-most X-Forwarded-For entry (added by Render) is trusted.
+    monkeypatch.setenv("CRASHLAB_PROXY_HOPS", "1")
+    monkeypatch.setenv("CRASHLAB_RATE_AUTH_PER_MIN", "3")
+    from server.app import create_app
+
+    c = TestClient(create_app(str(tmp_path / "xff.db")), headers={"origin": "http://testserver"})
+    codes = [c.post("/login", data={"email": "a@example.com", "password": "x" * 12},
+                    headers={"x-forwarded-for": f"10.0.0.{i}, 203.0.113.7"}).status_code for i in range(5)]
+    assert codes[-1] == 429  # a new fake left-most IP each time, same real client: still limited
+    from server.security import client_ip
+
+    class R:  # minimal request stand-in
+        headers = {"x-forwarded-for": "1.1.1.1, 2.2.2.2"}
+        client = None
+    assert client_ip(R) == "2.2.2.2"
