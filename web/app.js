@@ -978,8 +978,16 @@
     if (btn) btn.onclick = async () => {
       const n = (regs || []).length, ag2 = agents().length ? agents() : ["v1", "v2"];
       if (UI && !(await UI.confirm({ title: `Run ${n} regression tests?`, body: `Each test runs 3 times on ${ag2.length} agent version${ag2.length > 1 ? "s" : ""} (${n * 3 * ag2.length} episodes). This takes a few seconds and records a new release-gate result.`, confirmLabel: "Run suite" }))) return;
-      const r = await action(btn, "Running…", () => api("/regression-suites/default/run", { method: "POST", body: JSON.stringify({ agents: agents().length ? agents() : ["v1", "v2"], repeats: 3 }) }),
-        (x) => `Suite finished: ${x.rows.length} tests. ${Object.entries(x.release_gate).map(([a, g]) => `${a} ${g ? "releasable" : "blocked"}`).join(", ")}`);
+      // The suite runs in the background (real models can take minutes); poll until it finishes.
+      const r = await action(btn, "Running…", async () => {
+        await api("/regression-suites/default/run", { method: "POST", body: JSON.stringify({ agents: agents().length ? agents() : ["v1", "v2"], repeats: 3 }) });
+        for (;;) {
+          await new Promise((ok) => setTimeout(ok, 1500));
+          const st = await api("/regression-suites/default/status");
+          if (st.error) throw new Error(st.error);
+          if (!st.running) return api("/regression-suites/default/latest");
+        }
+      }, (x) => `Suite finished: ${x.rows.length} tests. ${Object.entries(x.release_gate).map(([a, g]) => `${a} ${g ? "releasable" : "blocked"}`).join(", ")}`);
       if (r) { S.regRun = r; route(); }
     };
   };

@@ -119,7 +119,7 @@ def test_every_image_has_alt_and_icons_are_hidden(site):
         p = Page(c.get(u).text)
         assert all("alt" in i for i in p.imgs), u
         assert all(s.get("aria-hidden") == "true" or s.get("role") == "img" for s in p.svgs), u
-    js = (ROOT / "web" / "app.js").read_text()
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     assert js.count("<svg class=\"chart\"") == js.count('role="img" aria-label=')  # every chart is labelled
 
 
@@ -163,8 +163,8 @@ def test_robots_txt(tmp_path, monkeypatch):
 def test_https_setup(tmp_path, monkeypatch):
     _, c = make(tmp_path, monkeypatch, CRASHLAB_HSTS="1")
     assert c.get("/").headers["strict-transport-security"].startswith("max-age=31536000")
-    caddy = (ROOT / "Caddyfile").read_text()
-    compose = (ROOT / "docker-compose.yml").read_text()
+    caddy = (ROOT / "Caddyfile").read_text(encoding="utf-8")
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert "reverse_proxy crashlab:8000" in caddy and "{$CRASHLAB_DOMAIN}" in caddy
     assert '"443:443"' in compose and 'profiles: ["https"]' in compose
     assert "127.0.0.1:8000:8000" in compose  # the app port is never public
@@ -254,7 +254,7 @@ def test_analytics_with_consent(tmp_path, monkeypatch):
     assert "gtag/js" not in r.text  # the GA script is never in the HTML: site.js adds it after consent
     assert 'data-event="generate_lead"' in c.get("/contact/thanks").text  # conversion event for GA
     assert "googletagmanager" not in c.get("/app/").text  # private dashboard is never tracked
-    js = (ROOT / "web" / "site.js").read_text()
+    js = (ROOT / "web" / "site.js").read_text(encoding="utf-8")
     assert '"consent", "default", { analytics_storage: "denied"' in js and 'Cookie settings' not in js or True
 
 
@@ -297,7 +297,7 @@ def test_faq_section_and_structured_data(site):
 # 15 ---------------------------------------------------------------- testimonials
 def test_no_fake_testimonials(site, tmp_path, monkeypatch):
     _, c = site
-    assert json.loads((ROOT / "web" / "site" / "testimonials.json").read_text()) == []
+    assert json.loads((ROOT / "web" / "site" / "testimonials.json").read_text(encoding="utf-8")) == []
     assert 'id="testimonials"' not in c.get("/").text  # hidden until real quotes exist
     import server.site as site_mod
 
@@ -306,10 +306,10 @@ def test_no_fake_testimonials(site, tmp_path, monkeypatch):
         {"name": "Real Person", "role": "CTO, Example", "quote": "Found a double refund <b>in an hour</b>.", "consent": True},
         {"name": "No Consent", "role": "Dev", "quote": "Should not appear"},
         {"name": "", "role": "Dev", "quote": "Anonymous", "consent": True},
-    ]))
+    ]), encoding="utf-8")
     monkeypatch.setattr(site_mod, "SITE_DIR", tmp_path)
     monkeypatch.setattr(site_mod, "_testimonials", site_mod._testimonials)
-    (tmp_path / "testimonials.json").write_text(f.read_text())
+    (tmp_path / "testimonials.json").write_text(f.read_text(encoding="utf-8"), encoding="utf-8")
     t = c.get("/").text
     assert 'id="testimonials"' in t and "Real Person" in t and "&lt;b&gt;in an hour" in t
     assert "Should not appear" not in t and "Anonymous" not in t
@@ -346,7 +346,7 @@ def test_theme_script_runs_before_styles(site):
     html = c.get("/").text
     assert html.index('src="/static/theme.js"') < html.index('href="/static/styles.css"')
     assert 'src="/static/theme.js" defer' not in html and 'src="/static/theme.js" async' not in html
-    css = (ROOT / "web" / "styles.css").read_text()
+    css = (ROOT / "web" / "styles.css").read_text(encoding="utf-8")
     assert ':root[data-theme="dark"]' in css and "@media print" in css
 
 

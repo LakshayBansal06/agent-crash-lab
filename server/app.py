@@ -192,7 +192,16 @@ def create_app(db_path: str | None = None) -> FastAPI:
         if store.reserve_model_episodes(p.project_id, episodes, model_per_day) is None:
             raise HTTPException(429, f"today's real-model budget ({model_per_day} episodes) is used up; it resets at 00:00 UTC")
     max_jobs = int(os.environ.get("CRASHLAB_MAX_RUNNING", "4"))
-    log("startup", version=__version__, auth=mode, schema_version=store.schema_version, db=os.path.basename(store.path))
+    stale = store.fail_unfinished()  # a deploy or crash killed their workers; never leave them RUNNING forever
+    log("startup", version=__version__, auth=mode, schema_version=store.schema_version, db=os.path.basename(store.path),
+        interrupted_experiments=stale)
+    reg_state: dict[str, dict[str, Any]] = {}  # project -> {"running": bool, "error": str | None}
+
+    def prune_jobs(keep: int = 20) -> None:
+        """Finished jobs only serve late stream subscribers; keep the newest few so memory stays bounded."""
+        done = [k for k, j in jobs.items() if j.done]
+        for k in done[:-keep]:
+            jobs.pop(k, None)
 
     # compress JSON and static assets; SSE is excluded by Starlette (text/event-stream is not buffered)
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
@@ -407,6 +416,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         exp_id = f"exp_{uuid.uuid4().hex[:12]}"
         name = body.name or f"{' vs '.join(body.agents)} · {len(sc)} scenarios × {body.repeats}"
         store.create_experiment(exp_id, name, body.model_dump(), project_id=p.project_id)
+        prune_jobs()
         job = jobs[exp_id] = Job(exp_id, p.project_id)
         metrics.inc("experiments_started_total")
         log("experiment_queued", experiment=exp_id, project=p.project_id, key=p.key_id,
@@ -564,8 +574,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
     def list_regressions(p: Principal = requires("read")) -> list[dict[str, Any]]:
         return store.list_regressions(p.project_id)
 
-    @app.post(f"{API}/regression-suites/default/run")
+    @app.post(f"{API}/regression-suites/default/run", status_code=202)
     def run_regression_suite(body: RegressionRunIn, p: Principal = requires("write")) -> dict[str, Any]:
+        """Re-runs every saved regression test in the background (real-model agents can take minutes).
+        Poll GET .../status until running is false, then read GET .../latest."""
         regs = store.list_regressions(p.project_id)
         if not regs:
             raise HTTPException(409, "regression suite is empty")
@@ -574,10 +586,28 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 raise HTTPException(422, f"unknown agent {a!r}")
             if key := missing_key(a):
                 raise HTTPException(422, f"agent {a!r} needs {key} set on the server")
+        state = reg_state.setdefault(p.project_id, {"running": False, "error": None})
+        if state["running"]:
+            raise HTTPException(409, "the regression suite is already running")
         guard_model_spend(p, body.agents, len(regs), body.repeats)
-        res = run_regressions(regs, body.agents, repeats=body.repeats)
-        res["id"] = store.save_regression_run(res, p.project_id)
-        return res
+        state.update(running=True, error=None)
+
+        def work() -> None:
+            try:
+                res = run_regressions(regs, body.agents, repeats=body.repeats)
+                store.save_regression_run(res, p.project_id)
+            except Exception:  # noqa: BLE001 - reported through /status, logged with a trace
+                log("regression_run_failed", logging.ERROR, exc_info=True, project=p.project_id)
+                state["error"] = "the regression run failed; see the server log"
+            finally:
+                state["running"] = False
+
+        pool.submit(work)
+        return {"status": "RUNNING", "tests": len(regs), "status_url": f"{API}/regression-suites/default/status"}
+
+    @app.get(f"{API}/regression-suites/default/status")
+    def regression_status(p: Principal = requires("read")) -> dict[str, Any]:
+        return reg_state.get(p.project_id, {"running": False, "error": None})
 
     @app.get(f"{API}/regression-suites/default/latest")
     def latest_regression_run(p: Principal = requires("read")) -> Any:

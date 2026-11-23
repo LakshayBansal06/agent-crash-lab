@@ -315,7 +315,8 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
         if not EMAIL_RE.match(v["email"]):
             errors["email"] = "Enter a valid email address, like name@company.com."
         elif store.user_by_email(v["email"]):
-            errors["email"] = "An account with this email already exists. Sign in instead, or reset your password."
+            # neutral wording: don't confirm that an address is registered (full fix needs email verification)
+            errors["email"] = "We can't create an account with this email. If it's yours, sign in or reset your password."
         if pw := password_problem(f.get("password", ""), v["email"]):
             errors["password"] = pw
         if errors:

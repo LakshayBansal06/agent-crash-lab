@@ -46,7 +46,7 @@ def run_small_experiment(c):
 
 # --- 1. API keys in the frontend ---------------------------------------------------------
 def test_no_secrets_in_frontend():
-    web = "".join(p.read_text() for p in (ROOT / "web").rglob("*") if p.suffix in (".js", ".html", ".css", ".json"))
+    web = "".join(p.read_text(encoding="utf-8") for p in (ROOT / "web").rglob("*") if p.suffix in (".js", ".html", ".css", ".json"))
     assert not re.search(r"acl_[A-Za-z0-9_-]{20,}|sk-(ant-)?[A-Za-z0-9_-]{20,}|Bearer [A-Za-z0-9_-]{20,}", web)
 
 
@@ -89,7 +89,7 @@ def test_sql_injection_payloads_are_inert(app):
 
 
 def test_store_has_no_string_built_sql():
-    src = (ROOT / "crashlab" / "store.py").read_text()
+    src = (ROOT / "crashlab" / "store.py").read_text(encoding="utf-8")
     for m in re.finditer(r"execute\((f?\"[^\"]*\")", src):
         q = m.group(1)
         if q.startswith("f"):
@@ -117,7 +117,7 @@ def test_ingest_rejects_html_in_typed_fields(app):
 
 
 def test_frontend_escapes_dynamic_values():
-    js = (ROOT / "web" / "app.js").read_text()
+    js = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
     assert "const esc =" in js
     assert "eval(" not in js and "new Function" not in js and "document.write" not in js
 

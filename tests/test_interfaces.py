@@ -1,5 +1,6 @@
 """SDK, CLI, LLM agent loop and HTTP API."""
 import json
+import time
 
 from crashlab.agents.llm import GeminiToolAgent, LLMToolAgent
 from crashlab.cli import main
@@ -203,7 +204,27 @@ def test_api_end_to_end(tmp_path, monkeypatch):
     fid = failed["failure_ids"][0]
     assert c.post(f"/api/v1/failures/{fid}/minimize").json()["minimized_steps"] == 2
     assert c.post(f"/api/v1/failures/{fid}/regression").status_code == 201
-    rr = c.post("/api/v1/regression-suites/default/run", json={"agents": ["v2"]}).json()
+    started = c.post("/api/v1/regression-suites/default/run", json={"agents": ["v2"]})
+    assert started.status_code == 202  # runs in the background, never inside the web request
+    for _ in range(200):
+        if not c.get("/api/v1/regression-suites/default/status").json()["running"]:
+            break
+        time.sleep(0.05)
+    rr = c.get("/api/v1/regression-suites/default/latest").json()
     assert rr["release_gate"]["v2"] is True
     assert c.post("/api/v1/experiments", json={"agents": ["nope"]}).status_code == 422
     assert c.get("/api/v1/runs/missing").status_code == 404
+
+
+def test_restart_fails_experiments_its_workers_were_running(tmp_path, monkeypatch):
+    # Review item 7: a deploy mid-run must not leave an experiment RUNNING forever.
+    monkeypatch.setenv("CRASHLAB_AUTH", "off")
+    from crashlab.store import Store
+    from server.app import create_app
+
+    db = str(tmp_path / "restart.db")
+    st = Store(db)
+    st.create_experiment("exp_interrupted", "x", {"agents": ["v2"]})
+    st.set_status("exp_interrupted", "RUNNING")
+    app = create_app(db)
+    assert app.state.store.db.execute("SELECT status FROM experiments WHERE id='exp_interrupted'").fetchone()[0] == "FAILED"

@@ -1,6 +1,6 @@
 name: CI
 on:
-  push: { branches: [main] }
+  push: { branches: [main, master] }
   pull_request:
 
 permissions:
@@ -48,4 +48,8 @@ jobs:
       - name: Static reliability report
         run: crashlab export-demo --out report/index.html
       - uses: actions/upload-artifact@v4
-        with: { name: reliability-report, path: "report/ results.json" }
+        with:
+          name: reliability-report
+          path: |
+            report/
+            results.json

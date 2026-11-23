@@ -209,7 +209,7 @@ def _testimonials() -> list[dict[str, str]]:
     The section is hidden entirely while the file is empty."""
     f = SITE_DIR / "testimonials.json"
     try:
-        items = json.loads(f.read_text())
+        items = json.loads(f.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
     ok = []

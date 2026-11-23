@@ -15,6 +15,8 @@ rem            set CRASHLAB_NO_BROWSER=1 before running to skip the browser
 rem ======================================================================
 setlocal
 chcp 65001 >nul
+rem Python reads and writes UTF-8 everywhere (the rupee sign and other symbols stay intact on Windows)
+set "PYTHONUTF8=1"
 cd /d "%~dp0"
 title AGENT CRASH LAB
 

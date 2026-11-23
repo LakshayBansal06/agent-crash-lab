@@ -27,12 +27,12 @@ SCENARIO_DIR = DATA_DIR / "scenarios"
 
 @lru_cache(maxsize=1)
 def schema() -> dict[str, Any]:
-    return json.loads((DATA_DIR / "schemas" / "scenario.schema.json").read_text())
+    return json.loads((DATA_DIR / "schemas" / "scenario.schema.json").read_text(encoding="utf-8"))
 
 
 def load_scenarios(paths: Iterable[Path] | None = None) -> list[dict[str, Any]]:
     files = sorted(paths) if paths else sorted(SCENARIO_DIR.glob("*.json"))
-    return [json.loads(Path(p).read_text()) for p in files]
+    return [json.loads(Path(p).read_text(encoding="utf-8")) for p in files]
 
 
 def scenario_by_id(sid: str) -> dict[str, Any]:

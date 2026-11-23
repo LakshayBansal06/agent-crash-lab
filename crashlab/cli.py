@@ -91,7 +91,7 @@ def cmd_run(args) -> int:
             st.save_regression(reg)
     print_scorecards(res)
     if args.out:
-        Path(args.out).write_text(json.dumps(res, default=str))
+        Path(args.out).write_text(json.dumps(res, default=str), encoding="utf-8")
         print(c(f"\nresults written to {args.out}", DIM))
     print(c(f"experiment {res['experiment_id']} stored in {args.db}", DIM))
 

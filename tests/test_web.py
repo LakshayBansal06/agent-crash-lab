@@ -42,14 +42,14 @@ def test_api_reference_loads(c):
 
 
 def test_pages_have_metadata(c):
-    pages = [(WEB / "index.html").read_text()] + [c.get(p, headers={"Accept": "text/html"}).text for p in ("/", "/privacy", "/contact", "/nope")]
+    pages = [(WEB / "index.html").read_text(encoding="utf-8")] + [c.get(p, headers={"Accept": "text/html"}).text for p in ("/", "/privacy", "/contact", "/nope")]
     for html in pages:
         assert re.search(r'<meta name="description" content="[^"]{30,}">', html), html[:200]
         assert '<meta name="viewport"' in html and "<title>" in html and 'rel="icon"' in html
 
 
 def test_every_view_sets_a_title():
-    js = (WEB / "app.js").read_text()
+    js = (WEB / "app.js").read_text(encoding="utf-8")
     views = set(re.findall(r"VIEWS\.(\w+) = ", js)) - {"notfound"}
     titled = set(re.findall(r"^\s{4}(\w+): \[\"", js, re.M))
     assert views <= titled, views - titled

@@ -14,7 +14,7 @@ Each failure comes back as:
 
 > Stress → Detect → Explain → Minimize → Prevent → Compare
 
-This repository is the working vertical slice from the blueprint: **one environment, two agent versions, a fault engine, the full failure-to-regression loop**, plus an SDK, CLI, REST API with live streaming, and a dashboard. It is all tested (129 tests, including security, website and real-browser suites) and runs with no external services.
+This repository is the working vertical slice from the blueprint: **one environment, two agent versions, a fault engine, the full failure-to-regression loop**, plus an SDK, CLI, REST API with live streaming, and a dashboard. It is all tested (137 tests, including security, website and real-browser suites) and runs with no external services.
 
 ---
 
@@ -158,7 +158,7 @@ There are 20 original scenarios in `crashlab/data/scenarios/`, validated against
 | False completion rate | Replies containing a claim the final state contradicts ÷ replies |
 | Reliability score | Weighted mean of the six dimension scores (weights configurable per scenario) |
 
-Latency is measured on the deterministic virtual clock. Cost uses simulated token pricing for the built-in agents; real adapters report real usage.
+Latency is measured on the deterministic virtual clock. Token counts are simulated for the built-in agents and real for Claude and Gemini (taken from each API response, with the model version recorded in the trace; temperature 0). Cost is an estimate from those tokens. When a model provider fails after retries (outage, quota), the run is marked **inconclusive** and left out of every metric, so a provider hiccup is never scored as an agent failure.
 
 ---
 
@@ -217,7 +217,7 @@ The root-cause engine reports evidence-linked hypotheses with a confidence level
 
 ```bash
 pip install -e ".[dev]"
-pytest -q                 # 129 tests: engine, evaluators, ddmin, SDK, CLI, API, security, website, browser
+pytest -q                 # 137 tests: engine, evaluators, ddmin, SDK, CLI, API, security, website, browser
                           # (browser tests need: pip install playwright && playwright install chromium)
 ruff check crashlab server tests
 ```

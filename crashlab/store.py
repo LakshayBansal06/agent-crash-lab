@@ -384,6 +384,11 @@ class Store:
             self.db.execute("INSERT INTO experiments(id, project_id, name, status, created_at, config) VALUES (?,?,?,?,?,?)",
                             (exp_id, project_id, name, "QUEUED", _now(), json.dumps(config)))
 
+    def fail_unfinished(self) -> int:
+        """Experiments left QUEUED or RUNNING by a restart (their worker died with the process) become FAILED."""
+        with self._lock, self.db:
+            return self.db.execute("UPDATE experiments SET status='FAILED' WHERE status IN ('QUEUED','RUNNING')").rowcount
+
     def set_status(self, exp_id: str, status: str) -> None:
         with self._lock, self.db:
             self.db.execute("UPDATE experiments SET status=? WHERE id=?", (status, exp_id))

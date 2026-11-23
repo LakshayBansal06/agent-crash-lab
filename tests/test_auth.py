@@ -48,7 +48,7 @@ def test_signup_validation_and_duplicates(app):
     assert r.status_code == 422 and r.text.count('aria-invalid="true"') == 3
     assert signup(c).status_code == 303
     r = signup(client(app))
-    assert r.status_code == 422 and "already exists" in r.text
+    assert r.status_code == 422 and "create an account with this email" in r.text and "already exists" not in r.text
 
 
 def test_login_wrong_password_logout(app):

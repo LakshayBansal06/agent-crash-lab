@@ -112,3 +112,21 @@ def test_state_machine_rejects_illegal_transitions():
     sm.to("INITIALIZING")
     with pytest.raises(IllegalTransition):
         sm.to("COMPLETED")
+
+
+def test_loop_guard_catches_cycles_not_just_repeats():
+    # Review: A->B->A->B used to slip past the identical-call guard.
+    from crashlab.agents.base import Agent, ToolCall
+    from crashlab.runner import run_episode
+    from crashlab.scenarios import scenario_by_id
+
+    class PingPong(Agent):
+        def reset(self, task, tools, context, rng):
+            self.i = 0
+
+        def act(self, observation):
+            self.i += 1
+            return ToolCall("get_order" if self.i % 2 else "get_refund_status", {"order_id": "ORD-1001"})
+
+    ep = run_episode(scenario_by_id("ACL-ECOM-0001"), PingPong(), 1, "pingpong")
+    assert ep.termination == "loop_guard" and len(ep.actions) == 8  # 4 repeats of a 2-call cycle

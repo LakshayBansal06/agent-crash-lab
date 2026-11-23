@@ -257,7 +257,7 @@ pip install -e ".[dev]" ruff playwright
 python -m playwright install chromium
 ```
 
-Run all 129 tests (about one minute):
+Run all 137 tests (about one minute):
 
 ```powershell
 pytest -q

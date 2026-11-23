@@ -24,14 +24,14 @@ def build_payload(agents: list[str], repeats: int) -> dict[str, Any]:
 
 
 def render(payload: dict[str, Any]) -> str:
-    html = (WEB / "index.html").read_text()
-    css = (WEB / "styles.css").read_text()
-    js = (WEB / "app.js").read_text()
-    ui = (WEB / "ui.js").read_text()
-    theme = (WEB / "theme.js").read_text()
+    html = (WEB / "index.html").read_text(encoding="utf-8")
+    css = (WEB / "styles.css").read_text(encoding="utf-8")
+    js = (WEB / "app.js").read_text(encoding="utf-8")
+    ui = (WEB / "ui.js").read_text(encoding="utf-8")
+    theme = (WEB / "theme.js").read_text(encoding="utf-8")
     data = json.dumps(payload, default=str, separators=(",", ":")).replace("</", "<\\/")
     html = html.replace('<link rel="stylesheet" href="/static/styles.css">', f"<style>\n{css}\n</style>")
-    icon = "data:image/svg+xml," + quote((WEB / "favicon.svg").read_text().strip())  # no server to serve /favicon.ico
+    icon = "data:image/svg+xml," + quote((WEB / "favicon.svg").read_text(encoding="utf-8").strip())  # no server to serve /favicon.ico
     html = html.replace('href="/favicon.ico"', f'href="{icon}"')
     html = html.replace('<script src="/static/theme.js"></script>', f"<script>\n{theme}\n</script>")
     html = html.replace('<script src="/static/ui.js"></script>', f"<script>\n{ui}\n</script>")
@@ -42,5 +42,5 @@ def render(payload: dict[str, Any]) -> str:
 
 def export_static(out: Path, agents: list[str] | None = None, repeats: int = 5) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(render(build_payload(agents or ["v1", "v2"], repeats)))
+    out.write_text(render(build_payload(agents or ["v1", "v2"], repeats)), encoding="utf-8")
     return out

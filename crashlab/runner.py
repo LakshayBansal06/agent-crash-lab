@@ -102,6 +102,22 @@ def _sim_usage(rng: random.Random, step: int, obs: Observation | None) -> dict[s
     return {"input_tokens": ctx, "output_tokens": 38 + rng.randint(0, 45)}
 
 
+def _repeated_cycle(calls: list[RecordedAction], times: int, max_len: int = 3) -> list[RecordedAction] | None:
+    """The shortest cycle of 1..max_len calls that the latest calls repeat `times` times in a row, else None.
+    A cycle containing `wait` is backoff (wait -> retry), the correct reaction to rate limits, not a loop:
+    the step and time budgets still bound it."""
+    for n in range(1, max_len + 1):
+        tail = calls[-n * times:]
+        if len(tail) < n * times:
+            break
+        unit = tail[:n]
+        if any(c.tool == "wait" for c in unit):
+            continue
+        if all(c.tool == unit[i % n].tool and c.args == unit[i % n].args for i, c in enumerate(tail)):
+            return unit
+    return None
+
+
 def run_episode(
     scenario: dict[str, Any],
     agent: Agent,
@@ -272,14 +288,13 @@ def run_episode(
             check_invariants(res_ev.event_id)
         obs = Observation(action.tool, copy.deepcopy(action.args), ok, copy.deepcopy(result), error)
 
-        # loop guard
-        tail = [a for a in actions if a.kind == "tool"][-budgets.max_identical_calls:]
-        if len(tail) == budgets.max_identical_calls and all(
-            a.tool == tail[0].tool and a.args == tail[0].args for a in tail
-        ):
+        # loop guard: the same call, or the same short cycle of calls (A->B->A->B), repeated with identical arguments
+        cycle = _repeated_cycle([a for a in actions if a.kind == "tool"], budgets.max_identical_calls)
+        if cycle:
+            pattern = " -> ".join(a.tool for a in cycle)
             col.emit("budget_exceeded", actor="environment", message=(
-                f"Loop guard: {action.tool} called {budgets.max_identical_calls}x with identical arguments"),
-                metadata={"budget": "max_identical_calls"})
+                f"Loop guard: {pattern} repeated {budgets.max_identical_calls}x with identical arguments"),
+                metadata={"budget": "max_identical_calls", "cycle": [a.tool for a in cycle]})
             termination = "loop_guard"
             break
         if clock.now_ms > budgets.max_duration_ms:

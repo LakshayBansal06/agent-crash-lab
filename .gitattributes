@@ -1,2 +1,7 @@
+# One rule for every machine, whatever its core.autocrlf: LF in the repo and on disk, CRLF only for .bat
+* text=auto eol=lf
 *.bat text eol=crlf
 *.sh text eol=lf
+*.png binary
+*.webm binary
+*.svg text eol=lf
