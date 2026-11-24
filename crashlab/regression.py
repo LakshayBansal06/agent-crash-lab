@@ -41,10 +41,11 @@ def regression_name(failure: Failure, scenario: dict[str, Any]) -> str:
 
 def generate_regression(failure: Failure, scenario: dict[str, Any], repro: Reproduction | None,
                         activated: set[str] | None = None) -> dict[str, Any]:
-    """``activated`` = faults that fired in the source episode. They are all kept, because the
-    scenario's expected state is defined under them; the minimal subset is recorded as metadata."""
+    """Every fault in the scenario is kept, fired or not: the expected state is defined in that world.
+    (A naive agent can fail before it ever reaches a fault's trigger; dropping that fault would leave
+    the test demanding an outcome that only makes sense with it, and fail a correct agent.)
+    ``activated`` (faults that fired in the source episode) and the minimal subset are recorded as metadata."""
     minimal = sorted({fid for s in (repro.steps if repro else []) for fid in s["faults"]})
-    needed = set(activated) if activated is not None else {f.get("fault_id") for f in scenario.get("faults", [])}
     reg = copy.deepcopy(scenario)
     h = hashlib.sha1(f"{failure.signature}|{scenario['scenario_id']}".encode(), usedforsecurity=False).hexdigest()[:6].upper()
     reg["scenario_id"] = f"REG-ECOM-{scenario['scenario_id'].split('-')[-1]}-{h}"
@@ -52,8 +53,7 @@ def generate_regression(failure: Failure, scenario: dict[str, Any], repro: Repro
     reg["category"] = "regression"
     reg["split"] = "test"
     reg["title"] = f"Regression: {failure.title}"
-    reg["faults"] = [f for i, f in enumerate(scenario.get("faults", []))
-                     if f.get("fault_id", f"F-{i + 1:03d}") in needed]
+    reg["faults"] = copy.deepcopy(scenario.get("faults", []))
     extra: list[str] = []
     reg["expected_state"] = list(dict.fromkeys(scenario["expected_state"]))
     reg["invariants"] = list(dict.fromkeys(scenario.get("invariants", []) + extra))
@@ -68,6 +68,7 @@ def generate_regression(failure: Failure, scenario: dict[str, Any], repro: Repro
         "failing_checks": [c["name"] for c in failure.checks],
         "discovered_on": failure.agent,
         "minimal_faults": minimal,
+        "faults_fired_in_source": sorted(activated) if activated is not None else None,
         "minimized_steps": repro.minimized_steps if repro else None,
         "original_steps": repro.original_steps if repro else None,
         "reproduction": repro.steps if repro else None,
