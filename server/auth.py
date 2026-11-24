@@ -163,7 +163,13 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
     call = http or google_http
     mail = mailer or send_reset_email
     signer = (_env("CRASHLAB_FORM_SECRET").encode() or secrets.token_bytes(32))
-    app.state.setup_token = setup_token = secrets.token_urlsafe(24)
+    # The first-admin link must survive restarts: a free host sleeps after 15 idle minutes and wipes its disk on
+    # deploy, and a link that changed on every wake-up expired before people used it. With a persistent secret it
+    # is derived from that secret (stable, unguessable without it); it only works while no admin exists.
+    form_secret = _env("CRASHLAB_FORM_SECRET")
+    app.state.setup_token = setup_token = (
+        base64.urlsafe_b64encode(hmac.new(form_secret.encode(), b"crashlab:first-admin-setup", "sha256").digest())
+        .decode().rstrip("=")[:32] if form_secret else secrets.token_urlsafe(24))
 
     def page(request: Request, *, path: str, title: str, body: str, status: int = 200,
              description: str = "Sign in to AGENT CRASH LAB.") -> HTMLResponse:

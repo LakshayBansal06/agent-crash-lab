@@ -94,6 +94,23 @@ def test_first_admin_setup_link_works_once(app):
                                             "password": PW}).headers["location"] == "/admin/login"
 
 
+def test_setup_link_survives_a_restart(tmp_path, monkeypatch):
+    """A free host restarts after idling; the first-admin link must not change under the user's feet."""
+    from server.app import create_app
+
+    monkeypatch.setenv("CRASHLAB_AUTH", "required")
+    monkeypatch.setenv("CRASHLAB_FORM_SECRET", "deploy-secret-one")
+    first = create_app(str(tmp_path / "a.db")).state.setup_token
+    again = create_app(str(tmp_path / "b.db"))  # a restart with a wiped disk
+    assert again.state.setup_token == first and len(first) >= 32
+    monkeypatch.setenv("CRASHLAB_FORM_SECRET", "deploy-secret-two")
+    assert create_app(str(tmp_path / "c.db")).state.setup_token != first  # other deployments can't reuse it
+    c = client(again)
+    assert c.post("/setup", data={"token": first, "name": "Root", "email": "root@example.com",
+                                  "password": PW}).headers["location"] == "/admin"
+    assert c.get(f"/setup?token={first}").status_code == 303  # still dead once an admin exists
+
+
 def make_admin(app):
     c = client(app)
     c.post("/setup", data={"token": app.state.setup_token, "name": "Root", "email": "root@example.com", "password": PW})

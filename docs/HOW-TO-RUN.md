@@ -358,7 +358,7 @@ Other useful commands:
 | Browser shows an old version after you changed a file | Press **Ctrl + F5** to hard-refresh. |
 | LLM agent fails with 401 | Your `ANTHROPIC_API_KEY` is wrong or not set in **this** PowerShell window. |
 | Want a clean start | Stop the server and delete `crashlab.db` in the project folder. It's recreated on the next run (and prints a new admin setup link). |
-| Lost the admin setup link | Stop and start the server again: while no admin exists, it prints a fresh link every start. |
+| Lost the admin setup link | Stop and start the server again: while no admin exists, it prints the link every start. If `CRASHLAB_FORM_SECRET` is set (Render sets it for you), the link stays the same across restarts and redeploys. |
 | Forgot a password | An admin opens `/admin` and clicks **Reset link** next to the user. With email set up (`SMTP_*` in `.env`), users can use **Forgot password?** themselves. |
 | "Continue with Google" says it didn't complete | The redirect URI in Google Cloud must exactly match the site address + `/auth/google/callback` (section O). |
 
