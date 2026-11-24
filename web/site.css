@@ -335,3 +335,11 @@ main#main { flex: 1; width: 100%; max-width: 1240px; margin: 0 auto; padding: 0 
   .case-cover { display: none; }
   .stamp { mix-blend-mode: normal; }
 }
+
+/* smallest phones (320px): brand, search, theme and menu must share one row without pushing the page sideways */
+@media (max-width: 400px) {
+  .site-head { gap: 8px; }
+  .site-brand { gap: 8px; font-size: 13px; letter-spacing: .02em; min-width: 0; }
+  .site-brand span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .site-head .head-tools { gap: 6px; }
+}
