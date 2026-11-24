@@ -9,7 +9,7 @@ related_targets: ["server/auth.py","web/site.css","web/styles.css"]
 
 Scope: `/` (landing, Persuade), `/login` `/signup` `/admin/login` `/setup` `/forgot` `/reset` `/account` `/admin` (Operate, inherit the world with restraint), `/contact` `/privacy` (Read). The dashboard `/app/` inherits the same world in Operate mode.
 
-Audience: AI engineers and technical founders (primary); judges, professors, investors (must get it in one viewport). Action: create a free account → watch the full demo video → crash-test an agent. Proof: the seeded benchmark (19% → 99%, duplicates 15% → 0%, attacks 75% → 0%, 8 → 2 step reproduction). Pricing confirmed: Free, Pro ₹2,499, Team ₹9,999, Enterprise custom; payments not connected.
+Audience: AI engineers and technical founders (primary); judges, professors, investors (must get it in one viewport). Action: create a free account → watch the full demo video → crash-test an agent. Proof: the seeded benchmark (23% → 99%, duplicates 10% → 0%, attacks 67% → 0%, 8 → 2 step reproduction). Pricing confirmed: Free, Pro ₹2,499, Team ₹9,999, Enterprise custom; payments not connected.
 
 ## Direction contract
 

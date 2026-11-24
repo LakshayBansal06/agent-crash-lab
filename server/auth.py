@@ -135,11 +135,11 @@ def auth_card(*, title: str, lede: str, body: str, foot: str = "", admin: bool =
     <div class="cover-strip"><span class="cover-mark">{LOGO}</span></div>
     <p class="cover-quote">Your agent passed the demo. <b>Will it survive production?</b></p>
     <dl class="cover-findings">
-      <div><dt>Duplicate refunds</dt><dd>15% <span>→</span> 0%</dd></div>
-      <div><dt>Prompt injections that worked</dt><dd>75% <span>→</span> 0%</dd></div>
+      <div><dt>Duplicate refunds</dt><dd>10% <span>→</span> 0%</dd></div>
+      <div><dt>Prompt injections that worked</dt><dd>67% <span>→</span> 0%</dd></div>
       <div><dt>Failing run, minimized</dt><dd>8 steps <span>→</span> 2</dd></div>
     </dl>
-    <p class="cover-note">Measured on the included benchmark: reference agent v1 against the fixed v2, 200 episodes.</p>
+    <p class="cover-note">Measured on the included benchmark: reference agent v1 against the fixed v2, 300 episodes.</p>
   </aside>
   <div class="auth-card">
     <h1>{title}</h1>

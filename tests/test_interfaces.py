@@ -188,7 +188,7 @@ def test_api_end_to_end(tmp_path, monkeypatch):
     key = app.state.store.create_api_key("default", "t", ["read", "write"])["key"]
     c = TestClient(app, headers={"Authorization": f"Bearer {key}"})
     assert c.get("/health").json()["status"] == "ok"
-    assert len(c.get("/api/v1/scenarios").json()) == 20
+    assert len(c.get("/api/v1/scenarios").json()) == 30
     # Fresh install: "no regression run yet" is an empty answer, not a 404 the browser logs as an error.
     assert c.get("/api/v1/regression-suites/default/latest").status_code == 204
     r = c.post("/api/v1/experiments", json={"agents": ["v1", "v2"], "repeats": 2,

@@ -50,8 +50,9 @@ UTM_RE = re.compile(r"^[\w .+\-%/]{1,100}$")
 
 # Real numbers from `crashlab run --agents v1 v2 --repeats 5` (seeded, reproducible).
 # tests/test_site.py re-runs the benchmark and fails if these ever drift.
-RESULTS = {"episodes": 200, "v1_pass": 19, "v2_pass": 99, "v1_dup": "15%", "v2_dup": "0%",
-           "v1_attack": "75%", "v2_attack": "0%", "modes": 13, "repro_from": 8, "repro_to": 2}
+RESULTS = {"episodes": 300, "scenarios": 30, "per_agent": 150, "v1_pass": 35, "v2_pass": 149,
+           "v1_dup": "10%", "v2_dup": "0%", "v1_attack": "67%", "v2_attack": "0%", "modes": 15,
+           "repro_from": 8, "repro_to": 2}
 
 FAQ: list[tuple[str, str]] = [
     ("What does AGENT CRASH LAB test?",
@@ -362,19 +363,19 @@ crashlab demo</code></pre></div>
   
   <div>
     <h2 id="results-title">Measured, not claimed</h2>
-    <p class="sub">The included benchmark, measured <time datetime="{PAGE_UPDATED['/']}">{human_date(PAGE_UPDATED['/'])}</time>: {r['episodes']} episodes, 20 scenarios × 5 repeats × 2 versions of a refund agent. Anyone can reproduce it with <code>crashlab run</code>.</p>
-    <div class="compare" role="img" aria-label="Episodes passed: original agent {r['v1_pass']} of 100, fixed agent {r['v2_pass']} of 100">
-      <div class="bar v1"><span>Original agent (v1)</span><i style="--w:{r['v1_pass']}%"></i><b>{r['v1_pass']} / 100</b></div>
-      <div class="bar v2"><span>Fixed agent (v2)</span><i style="--w:{r['v2_pass']}%"></i><b>{r['v2_pass']} / 100</b></div>
+    <p class="sub">The included benchmark, measured <time datetime="{PAGE_UPDATED['/']}">{human_date(PAGE_UPDATED['/'])}</time>: {r['episodes']} episodes, {r['scenarios']} scenarios × 5 repeats × 2 versions of a refund agent. Anyone can reproduce it with <code>crashlab run</code>.</p>
+    <div class="compare" role="img" aria-label="Episodes passed: original agent {r['v1_pass']} of {r['per_agent']}, fixed agent {r['v2_pass']} of {r['per_agent']}">
+      <div class="bar v1"><span>Original agent (v1)</span><i style="--w:{100 * r['v1_pass'] / r['per_agent']:.1f}%"></i><b>{r['v1_pass']} / {r['per_agent']}</b></div>
+      <div class="bar v2"><span>Fixed agent (v2)</span><i style="--w:{100 * r['v2_pass'] / r['per_agent']:.1f}%"></i><b>{r['v2_pass']} / {r['per_agent']}</b></div>
     </div>
     <div class="table-wrap"><table class="table findings">
       <thead><tr><th>Metric</th><th class="num">Original agent (v1)</th><th class="num">Fixed agent (v2)</th></tr></thead>
       <tbody>
-        <tr><td>Episodes passed</td><td class="num">{r['v1_pass']} / 100</td><td class="num">{r['v2_pass']} / 100</td></tr>
+        <tr><td>Episodes passed</td><td class="num">{r['v1_pass']} / {r['per_agent']}</td><td class="num">{r['v2_pass']} / {r['per_agent']}</td></tr>
         <tr><td>Duplicate refunds</td><td class="num bad">{r['v1_dup']}</td><td class="num">{r['v2_dup']}</td></tr>
         <tr><td>Prompt-injection attacks that worked</td><td class="num bad">{r['v1_attack']}</td><td class="num">{r['v2_attack']}</td></tr>
       </tbody></table></div>
-    <p class="sub">{r['modes']} distinct failure modes found in v1, each with evidence, a minimal reproduction and a regression test. The fixed agent still fails once in 100, which is exactly what repeated-trial testing exists to catch.</p>
+    <p class="sub">{r['modes']} distinct failure modes found in v1, each with evidence, a minimal reproduction and a regression test. The fixed agent still fails once in {r['per_agent']}, which is exactly what repeated-trial testing exists to catch.</p>
   </div>
 </section>
 {testimonials}
@@ -688,7 +689,7 @@ def search_items() -> list[dict[str, str]]:
          "text": "fault injection timeouts rate limits stale data prompt injection race conditions regression tests"},
         {"title": "How it works", "subtitle": "Stress, detect, explain, minimize, prevent, compare", "url": "/#how",
          "text": "loop evaluators delta debugging minimization regression release gate pass^k confidence intervals"},
-        {"title": "Measured results", "subtitle": f"v1 passed {RESULTS['v1_pass']}/100, v2 passed {RESULTS['v2_pass']}/100",
+        {"title": "Measured results", "subtitle": f"v1 passed {RESULTS['v1_pass']}/{RESULTS['per_agent']}, v2 passed {RESULTS['v2_pass']}/{RESULTS['per_agent']}",
          "url": "/#results", "text": "benchmark duplicate refunds prompt injection attacks success rate failure modes"},
         {"title": "Pricing", "subtitle": "Free, Pro ₹2,499, Team ₹9,999, Enterprise", "url": "/#pricing",
          "text": "plans price cost monthly rupees inr free trial upgrade billing enterprise team pro"},

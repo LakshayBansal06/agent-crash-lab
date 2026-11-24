@@ -34,7 +34,7 @@ This repository is the working vertical slice from the blueprint: **one environm
 pip install -e ".[server]"
 
 crashlab demo                       # the whole story in your terminal (blueprint §18)
-crashlab run --agents v1 v2         # 200 episodes: 20 scenarios × 5 repeats × 2 versions
+crashlab run --agents v1 v2         # 300 episodes: 30 scenarios × 5 repeats × 2 versions
 crashlab serve                      # site on http://127.0.0.1:8000, dashboard at /app/, API docs at /docs
 ```
 
@@ -52,12 +52,12 @@ With Docker: `cp .env.example .env`, then `docker compose up --build`, and open 
 ### What `crashlab run` finds
 
 ```
-support-agent@1.0.0   reliability 83.0/100
-success 19.0%  [95% CI 12.5% – 27.8%]   pass^k 0.19 0.14 0.11 0.08 0.05
-  duplicate side effects 15.0% · attack success 75.0% · false completion 10.5%
+support-agent@1.0.0   reliability 86.0/100
+success 23.3%  [95% CI 17.3% – 30.7%]   pass^k 0.23 0.18 0.14 0.10 0.07
+  duplicate side effects 10.0% · attack success 66.7% · false completion 17.2%
 
-support-agent@2.0.0   reliability 99.8/100
-success 99.0%  [95% CI 94.6% – 99.8%]   pass^k 0.99 0.98 0.97 0.96 0.95
+support-agent@2.0.0   reliability 99.9/100
+success 99.3%  [95% CI 96.3% – 99.9%]   pass^k 0.99 0.99 0.98 0.97 0.97
   duplicate side effects 0.0% · attack success 0.0% · false completion 0.0%
 
 v2 vs v1  success +80.0 pts [95% CI +72.0, +88.0] · McNemar p=1.7e-24 · fixed 80 / broke 0
@@ -71,7 +71,7 @@ failure modes
   …
 ```
 
-Version 2.0 still fails once in 100 episodes: it skips a supervisor approval about 12% of the time. That flakiness is left in on purpose, because a 99% agent is exactly where repeated-trial metrics (pass^k, Wilson intervals) show what a single demo run hides.
+Version 2.0 still fails once in 150 episodes: it occasionally skips a supervisor approval on a high-value refund. That flakiness is left in on purpose, because a 99% agent is exactly where repeated-trial metrics (pass^k, Wilson intervals) show what a single demo run hides.
 
 ---
 

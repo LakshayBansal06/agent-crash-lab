@@ -160,7 +160,7 @@ You'll watch it: register an agent → inject a "payment timed out" fault → ca
 crashlab run --agents v1 v2
 ```
 
-It tests the buggy agent (v1) against the fixed agent (v2) on 20 scenarios × 5 repeats, then prints reliability scores, confidence intervals and every failure mode it found.
+It tests the buggy agent (v1) against the fixed agent (v2) on 30 scenarios × 5 repeats, then prints reliability scores, confidence intervals and every failure mode it found.
 
 ### 3. The website and dashboard
 
@@ -190,7 +190,7 @@ Hold **Ctrl** and click that link (or copy it into the browser), fill in your na
 
 Then anyone (including you, with a second account) can sign up at `/signup`. Each account gets its own private workspace.
 
-In the dashboard, click **Start an experiment**, then **Start experiment**. You'll see 200 episodes run live, turning green (passed) or red (failed). Then open **Failures**, click a failure, and use **Minimize** and **Save as regression test**.
+In the dashboard, click **Start an experiment**, then **Start experiment**. You'll see 300 episodes run live, turning green (passed) or red (failed). Then open **Failures**, click a failure, and use **Minimize** and **Save as regression test**.
 
 **To stop the server:** click in the PowerShell window and press **Ctrl + C**.
 

@@ -330,10 +330,26 @@
     window.scrollTo(0, 0);
   }
 
+  // First run: a new workspace has nothing to show yet, so offer the three ways in instead of a blank page.
   function emptyExperiment() {
-    return `<div class="empty"><h3>No experiments yet</h3><p>Run your first crash test to see reliability results here.</p>
-      ${S.mode === "api" ? '<p><a class="btn primary" href="#/experiments/new">Start an experiment</a></p>' : ""}
-      <p class="sub">Or from a terminal: <code>crashlab run --agents v1 v2 --repeats 5</code></p></div>`;
+    const api = S.mode === "api";
+    const who = api && S.me && S.me.user ? `, ${esc(S.me.user.name.split(" ")[0])}` : "";
+    return `<div class="welcome">
+      <p class="eyebrow">New workspace</p>
+      <h1>Welcome${who}. Let's crash-test an agent.</h1>
+      <p class="lede">Nothing has run here yet. Pick a starting point: the results, failures and regression tests all fill in from your first experiment.</p>
+      <ol class="paths">
+        <li><span class="n">1</span><div><h2>Watch it work in two minutes</h2>
+          <p>Run the included refund agents (a buggy v1 and a fixed v2) through ${(S.scenarios || []).length || 30} scenarios while faults fire. No setup, no model costs.</p>
+          ${api ? '<a class="btn primary" href="#/experiments/new">Start the sample experiment</a>' : "<code>crashlab run --agents v1 v2 --repeats 5</code>"}</div></li>
+        <li><span class="n">2</span><div><h2>Test your own agent</h2>
+          <p>Create an API key, install the Python SDK and point it at your agent function. Its runs show up here like any other experiment.</p>
+          ${api ? '<a class="btn" href="#/integrations">Connect your agent</a>' : '<a class="btn" href="#/integrations">See the SDK</a>'}</div></li>
+        <li><span class="n">3</span><div><h2>Browse the scenarios</h2>
+          <p>Every test case: the customer message, the faults injected and the exact end state that counts as success.</p>
+          <a class="btn" href="#/datasets">Open the dataset</a></div></li>
+      </ol>
+    </div>`;
   }
 
   class NotFound extends Error {}
@@ -1070,7 +1086,7 @@
       ${list.map((e) => `<tr class="link" data-exp="${esc(e.experiment_id)}" data-status="${esc(e.status)}"><td>${esc(e.name)}<div class="sub">${esc(e.experiment_id)} · ${esc(e.created_at)}</div></td>
         <td>${statusHtml(e.status === "COMPLETED" ? "pass" : e.status === "FAILED" ? "fail" : "flaky", titleCase(e.status))}</td>
         <td>${esc((e.config.agents || []).join(", "))}</td><td class="num">${Object.values(e.headline || {}).reduce((a, h) => a + (h.episodes || 0), 0) || "—"}</td>
-        <td>${Object.entries(e.headline || {}).map(([k, h]) => `${esc(k)} ${pct(h.success_rate, 0)}`).join(" · ") || "—"}</td></tr>`).join("") || '<tr><td colspan="5" class="empty">No experiments yet.</td></tr>'}
+        <td>${Object.entries(e.headline || {}).map(([k, h]) => `${esc(k)} ${pct(h.success_rate, 0)}`).join(" · ") || "—"}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No experiments yet. ${S.mode === "api" ? '<a href="#/experiments/new">Start the sample experiment</a> or <a href="#/integrations">connect your own agent</a>.' : ""}</td></tr>`}
       </tbody></table></div></section>`;
     page.querySelectorAll("tr[data-exp]").forEach((tr) => {
       tr.tabIndex = 0;

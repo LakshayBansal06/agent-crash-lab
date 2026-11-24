@@ -23,7 +23,7 @@ The fault-to-regression loop: Stress → Detect → Explain → Minimize → Pre
 - Deployed on Render; runs locally with `run.bat`.
 
 ## Capabilities and Constraints
-- One environment today: e-commerce (orders, payments, refunds, shipping, tickets, approvals), 20 scenarios, 8 fault types, 6 evaluators, 11-category failure taxonomy.
+- One environment today: e-commerce (orders, payments, refunds, shipping, tickets, approvals), 30 scenarios, 8 fault types, 6 evaluators, 11-category failure taxonomy.
 - Pricing confirmed by the user for display: Free; Pro ₹2,499/month; Team ₹9,999/month; Enterprise custom. Payments are not connected yet: plans must not pretend to take money.
 - Not built yet (do not claim): Postgres/Redis workers, container isolation for customer code, OpenAI Agents SDK / LangGraph / CrewAI adapters, other environments, SSO, billing.
 - The root-cause engine reports evidence-linked hypotheses with confidence; it never claims to know why a model decided something.
@@ -34,7 +34,7 @@ The fault-to-regression loop: Stress → Detect → Explain → Minimize → Pre
 - Mark: the crash-test calibration target, drawn in ink (navy on paper, paper on navy) since the docket redesign; red stays reserved for findings (`web/favicon.svg`).
 
 ## Evidence on Hand
-- Real, reproducible benchmark (seeded): 200 episodes; reference agent v1 passes 19%, v2 passes 99%; duplicate side effects 15% → 0%; attack success 75% → 0%; 13 failure modes; a failing trace minimized from 8 steps to 2. `tests/test_site.py` re-runs it so published numbers cannot drift.
+- Real, reproducible benchmark (seeded): 300 episodes; reference agent v1 passes 23% (35/150), v2 passes 99% (149/150); duplicate side effects 10% → 0%; attack success 67% → 0%; 15 failure modes; a failing trace minimized from 8 steps to 2. `tests/test_site.py` re-runs it so published numbers cannot drift.
 - Demo video of the whole product (recorded from the real app).
 - No customers, testimonials, logos, press or case studies exist. Never invent them; `web/site/testimonials.json` is empty on purpose.
 

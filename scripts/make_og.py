@@ -40,7 +40,7 @@ HTML = f"""<!doctype html><html><head><meta charset="utf-8">
   <h1>Your AI agent passed the demo. Will it survive production?</h1>
   <div class="stamp"><small>Finding</small>Duplicate refund</div>
   <div class="foot"><div class="brand">{LOGO}<span>AGENT CRASH LAB</span></div>
-    <div class="nums"><div><span>Original agent</span><b class="bad">{r['v1_pass']}/100</b> passed</div><div><span>Fixed agent</span><b>{r['v2_pass']}/100</b> passed</div></div></div>
+    <div class="nums"><div><span>Original agent</span><b class="bad">{r['v1_pass']}/{r['per_agent']}</b> passed</div><div><span>Fixed agent</span><b>{r['v2_pass']}/{r['per_agent']}</b> passed</div></div></div>
 </body></html>"""
 
 

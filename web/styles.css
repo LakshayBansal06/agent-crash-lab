@@ -365,6 +365,18 @@ pre.code {
 .ticker li { animation: none; }
 .empty { padding: 40px 20px; text-align: center; color: var(--muted); }
 .empty h3 { color: var(--ink); margin-bottom: 6px; }
+.welcome { max-width: 880px; padding: 8px 0 32px; }
+.welcome .eyebrow { font: 600 12px/1 var(--mono, ui-monospace, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+.welcome h1 { margin: 0 0 10px; }
+.welcome .lede { max-width: 62ch; margin-bottom: 28px; }
+.welcome .paths { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--line); }
+.welcome .paths li { display: grid; grid-template-columns: 44px 1fr; gap: 16px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+.welcome .paths .n { font: 700 15px/1 var(--mono, ui-monospace, monospace); width: 32px; height: 32px; display: grid; place-items: center;
+  border: 1.5px solid var(--ink); border-radius: 50%; color: var(--ink); }
+.welcome .paths li:first-child .n { background: var(--ink); color: var(--bg, #fff); }
+.welcome .paths h2 { font-size: 18px; margin: 4px 0 6px; }
+.welcome .paths p { margin: 0 0 14px; color: var(--muted); max-width: 60ch; }
+.welcome .paths code { font-size: 13px; }
 
 .reduce { display: flex; align-items: flex-end; gap: 10px; height: 120px; padding-top: 8px; }
 .reduce .bar { flex: 1; max-width: 46px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; height: 100%; }

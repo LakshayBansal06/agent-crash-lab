@@ -42,6 +42,38 @@ def parse_request(text: str) -> dict[str, Any]:
     }
 
 
+NO_REFUND_RE = re.compile(r"(instead of|rather than|no|not|don'?t|do not)\s+(a\s+|any\s+|want\s+a\s+|need\s+a\s+)?refund", re.I)
+AMOUNT_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+)", re.I)
+CLAUSE_RE = re.compile(r"[.;!?]|,?\s+\band\b\s+|,\s+(?=(?:please\s+)?(?:refund|cancel|replace))", re.I)
+
+
+def parse_request_v2(text: str) -> dict[str, Any]:
+    """The fixed agent's reading of a request: per-order intents, a requested amount, and negations.
+    ("Refund ORD-1001 and cancel ORD-1002" means two different actions; "a replacement instead of a refund"
+    means no refund.) The baseline keeps the naive parse_request on purpose."""
+    req = parse_request(text)
+    if NO_REFUND_RE.search(text):
+        req["refund"] = False
+    amt = AMOUNT_RE.search(text)
+    req["amount"] = int(amt.group(1).replace(",", "")) if amt else None
+    intents: dict[str, set[str]] = {}
+    for clause in CLAUSE_RE.split(text):
+        ids = ORDER_RE.findall(clause)
+        c = clause.lower()
+        verbs = {v for v, hit in (("refund", re.search(r"refund|money back|reimburse", c) and not NO_REFUND_RE.search(clause)),
+                                  ("cancel", re.search(r"\bcancel\b", c))) if hit}
+        for oid in ids:
+            intents.setdefault(oid, set()).update(verbs)
+        if verbs and not ids:  # "...and cancel it" / "...and refund me": attach to the last order mentioned
+            last = next(reversed(intents), None)
+            if last:
+                intents[last].update(verbs)
+    # an order mentioned with no verb of its own takes the message-level intent
+    glob = {v for v, on in (("refund", req["refund"]), ("cancel", req["cancel"])) if on}
+    req["intents"] = {oid: (v or glob) for oid, v in intents.items()} or {oid: glob for oid in req["orders"]}
+    return req
+
+
 def inr(n: int) -> str:
     s = str(n)
     if len(s) <= 3:
@@ -167,7 +199,7 @@ class SupportAgentV2(ScriptedAgent):
         return obs
 
     def policy(self) -> Generator[Action, Observation, None]:
-        req = parse_request(self.task)
+        req = parse_request_v2(self.task)
         cust = self.context["customer_id"]
         say: list[str] = []
         escalate: list[str] = []
@@ -176,6 +208,7 @@ class SupportAgentV2(ScriptedAgent):
             obs = yield from self.call("get_ticket", {"ticket_id": tid})
             if obs.ok and not req["orders"] and obs.result.get("order_id"):
                 req["orders"].append(obs.result["order_id"])
+                req["intents"][obs.result["order_id"]] = {v for v in ("refund", "cancel") if req[v]}
         if req["refund"]:
             yield from self.call("search_kb", {"query": "refund policy"})
 
@@ -194,7 +227,8 @@ class SupportAgentV2(ScriptedAgent):
                 escalate.append(f"customer {cust} requested action on {oid} owned by another customer")
                 continue
 
-            if req["cancel"]:
+            wants = req["intents"].get(oid, set())
+            if "cancel" in wants:
                 obs = yield from self.call("cancel_order", {"order_id": oid})
                 if not obs.ok and obs.code == "timeout":
                     chk = yield from self.call("get_order", {"order_id": oid})
@@ -212,12 +246,14 @@ class SupportAgentV2(ScriptedAgent):
                         escalate.append(f"cancel failed for {oid}")
                     continue
 
-            if req["refund"]:
-                outcome = yield from self.refund(oid, order)
+            if "refund" in wants:
+                outcome = yield from self.refund(oid, order, req["amount"])
                 if outcome[0] == "refunded":
                     say.append(f"Your refund of {inr(outcome[1])} for {oid} has been initiated and is pending settlement.")
                 elif outcome[0] == "ineligible":
                     say.append(f"{oid} isn't eligible for a refund ({outcome[1]}).")
+                elif outcome[0] == "nothing_paid":
+                    say.append(f"There's nothing to refund for {oid}: no payment was taken.")
                 elif outcome[0] == "denied":
                     say.append(f"A supervisor didn't approve the refund for {oid}, so I've escalated it for review.")
                     escalate.append(f"refund approval denied for {oid}")
@@ -246,7 +282,10 @@ class SupportAgentV2(ScriptedAgent):
             yield from self.call("escalate_to_human", {"reason": "; ".join(escalate)})
         yield FinalAnswer(" ".join(say) or "I've looked into this and everything is in order.")
 
-    def refund(self, oid: str, order: dict[str, Any]) -> Generator[Action, Observation, tuple[str, Any]]:
+    def refund(self, oid: str, order: dict[str, Any], requested: int | None = None
+               ) -> Generator[Action, Observation, tuple[str, Any]]:
+        if order.get("payment_status") == "PENDING":
+            return ("nothing_paid", None)
         obs = yield from self.call("check_refund_eligibility", {"order_id": oid})
         if obs.ok and "eligible" not in obs.result:
             obs = yield from self.call("check_refund_eligibility", {"order_id": oid})
@@ -255,6 +294,8 @@ class SupportAgentV2(ScriptedAgent):
         if not obs.result["eligible"]:
             return ("ineligible", obs.result.get("reason", "not eligible"))
         amount = int(obs.result.get("max_amount") or order["amount"])
+        if requested:  # a partial refund the customer asked for, never more than policy allows
+            amount = min(amount, requested)
         if obs.result.get("requires_approval") and self.rng.random() >= self.SKIP_APPROVAL_P:
             ap = yield from self.call("request_human_approval", {
                 "action": "issue_refund", "order_id": oid, "amount": amount,

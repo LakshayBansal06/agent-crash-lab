@@ -305,7 +305,7 @@ REFUND_DONE = re.compile(r"processed|issued|initiated|on its way|completed|sent|
 REFUND_WORD = re.compile(r"refund|money back|reimburs|credited back", re.I)
 CANCEL_DONE = re.compile(r"\bcancel(?:l)?ed\b|cancellation (?:is|has been) (?:confirmed|complete)", re.I)
 ADDRESS_DONE = re.compile(r"address (?:has been|was|is now) (?:updated|changed)|updated (?:your|the) (?:delivery |shipping )?address|"
-                          r"changed (?:your|the) (?:delivery |shipping )?address|address is now|will (?:now )?ship to", re.I)
+                          r"changed (?:your|the) (?:delivery |shipping )?address|address is now|will now ship to", re.I)
 
 
 def extract_claims(text: str, default_order: str | None = None) -> list[dict[str, str]]:

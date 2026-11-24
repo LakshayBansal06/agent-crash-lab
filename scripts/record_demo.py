@@ -135,9 +135,9 @@ def main() -> None:
             # 3. Run an experiment
             page.goto(wait_until="domcontentloaded", url=BASE + "/app/#/experiments/new")
             page.wait_for_timeout(1200)
-            cap(page, "Pick agents and scenarios: v1 is the original agent, v2 the fixed one. 20 scenarios × 5 repeats.", 4.0)
+            cap(page, "Pick agents and scenarios: v1 is the original agent, v2 the fixed one. 30 scenarios × 5 repeats.", 4.0)
             page.click("button[type=submit]")
-            cap(page, "200 episodes run live while faults fire: timeouts, rate limits, stale data, prompt injection.", 4.5)
+            cap(page, "300 episodes run live while faults fire: timeouts, rate limits, stale data, prompt injection.", 4.5)
             page.wait_for_selector("text=Finished", timeout=120_000)
             page.wait_for_timeout(800)
             cap(page, "Green passed, red failed. Every square is one recorded episode.", 3.0)
