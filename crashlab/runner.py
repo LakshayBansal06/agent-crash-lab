@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import random
 from dataclasses import asdict, dataclass, field
 from typing import Any
@@ -337,6 +338,35 @@ def _inject(result: Any, params: dict[str, Any]) -> Any:
     return result
 
 
-def episode_cost_inr(usage: dict[str, int]) -> float:
-    return round(usage.get("input_tokens", 0) / 1000 * SIM_PRICE_INR["input"]
-                 + usage.get("output_tokens", 0) / 1000 * SIM_PRICE_INR["output"], 4)
+# List prices in USD per 1M tokens (input, output), matched by model-id prefix, longest first. Sources: Anthropic's
+# published API prices and Google's Gemini API pricing page (gemini-3.8-flash is at its introductory rate until
+# 2026-12-31; it doubles on 2027-01-01). Override any of them with CRASHLAB_MODEL_PRICES='{"model": [in, out]}'.
+MODEL_PRICES_USD: dict[str, tuple[float, float]] = {
+    "claude-fable-5-2": (8.0, 40.0), "claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-haiku-5-5": (0.10, 0.50), "gemini-3.8-flash": (0.75, 3.75),
+}
+
+
+def _prices() -> dict[str, tuple[float, float]]:
+    table = dict(MODEL_PRICES_USD)
+    try:
+        table.update({k: (float(v[0]), float(v[1])) for k, v in json.loads(os.environ.get("CRASHLAB_MODEL_PRICES", "{}")).items()})
+    except (ValueError, TypeError, IndexError):
+        pass  # a malformed override must never break a run; the built-in table stays
+    return table
+
+
+def model_price_inr_per_1k(model: str | None) -> dict[str, float]:
+    """Price per 1K tokens in INR for a model, or the simulated rate for scripted agents and unknown models."""
+    if model:
+        for prefix, (inp, out) in sorted(_prices().items(), key=lambda kv: -len(kv[0])):
+            if model.startswith(prefix):
+                fx = float(os.environ.get("CRASHLAB_USD_INR", "88"))  # exchange rate used for the ₹ figures
+                return {"input": inp * fx / 1000, "output": out * fx / 1000}
+    return SIM_PRICE_INR
+
+
+def episode_cost_inr(usage: dict[str, int], model: str | None = None) -> float:
+    price = model_price_inr_per_1k(model)
+    return round(usage.get("input_tokens", 0) / 1000 * price["input"]
+                 + usage.get("output_tokens", 0) / 1000 * price["output"], 4)

@@ -36,7 +36,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from .observability import log
 from .security import SESSION_COOKIE, client_ip, public_url, same_origin
-from .site import EMAIL_RE, LOGO, ga_id, layout, site_csp
+from .site import EMAIL_RE, LOGO, ga_id, layout, site_csp, turnstile, verify_turnstile
 
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN = "https://oauth2.googleapis.com/token"  # noqa: S105 - a URL, not a secret
@@ -172,10 +172,10 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
         .decode().rstrip("=")[:32] if form_secret else secrets.token_urlsafe(24))
 
     def page(request: Request, *, path: str, title: str, body: str, status: int = 200,
-             description: str = "Sign in to AGENT CRASH LAB.") -> HTMLResponse:
-        doc = layout(request, path=path, title=title, description=description, body=body, indexable=False)
+             description: str = "Sign in to AGENT CRASH LAB.", captcha: bool = False) -> HTMLResponse:
+        doc = layout(request, path=path, title=title, description=description, body=body, indexable=False, captcha=captcha)
         return HTMLResponse(doc, status_code=status, headers={
-            "Content-Security-Policy": site_csp(analytics=bool(ga_id()), captcha=False),
+            "Content-Security-Policy": site_csp(analytics=bool(ga_id()), captcha=captcha),
             "Referrer-Policy": "strict-origin-when-cross-origin", "Cache-Control": "no-store",
             "X-Robots-Tag": "noindex, nofollow"})
 
@@ -296,6 +296,7 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
       {field("name", "Your name", f'<input id="name" name="name" autocomplete="name" required maxlength="100" value="{e(v.get("name", ""))}"{{aria}}>', errors)}
       {field("email", "Work email", f'<input id="email" name="email" type="email" autocomplete="email" required maxlength="254" value="{e(v.get("email", ""))}"{{aria}}>', errors)}
       {field("password", "Password", pw_input("password", "new-password"), errors, f"At least {MIN_PASSWORD} characters. A short sentence works well.")}
+      {f'<div class="cf-turnstile" data-sitekey="{e(ts[0])}" data-theme="auto"></div>' if (ts := turnstile()) else ""}
       <button class="btn primary block" type="submit">Create account</button>
       <p class="sub">By creating an account you agree to our <a href="/privacy">privacy policy</a>.</p>
     </form>"""
@@ -306,15 +307,21 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
     def signup_page(request: Request) -> Response:
         if current_user(request):
             return RedirectResponse("/app/", status_code=303)
-        return page(request, path="/signup", title="Create your account", body=signup_body())
+        return signup_view(request, signup_body())
+
+    def signup_view(request: Request, body: str, status: int = 200) -> HTMLResponse:
+        # Turnstile (when configured) makes throwaway accounts costly, so per-account limits mean something
+        return page(request, path="/signup", title="Create your account", body=body, status=status, captcha=bool(turnstile()))
 
     @app.post("/signup", include_in_schema=False)
     async def signup_submit(request: Request) -> Response:
         f = await form(request)
         v = {k: f.get(k, "").strip() for k in ("name", "email")}
         if problem := guard(request):
-            return page(request, path="/signup", title="Create your account", body=signup_body(values=v, error=problem),
-                        status=429 if "Too many" in problem else 403)
+            return signup_view(request, signup_body(values=v, error=problem), 429 if "Too many" in problem else 403)
+        if (ts := turnstile()) and not getattr(app.state, "turnstile_verifier", verify_turnstile)(
+                ts[1], f.get("cf-turnstile-response", ""), client_ip(request)):
+            return signup_view(request, signup_body(values=v, error="Please complete the human check and try again."), 403)
         errors: dict[str, str] = {}
         if not 1 <= len(v["name"]) <= 100:
             errors["name"] = "Enter your name."
@@ -326,7 +333,7 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
         if pw := password_problem(f.get("password", ""), v["email"]):
             errors["password"] = pw
         if errors:
-            return page(request, path="/signup", title="Create your account", body=signup_body(errors, v), status=422)
+            return signup_view(request, signup_body(errors, v), 422)
         user = store.create_user(v["email"], v["name"], password=f["password"])
         log("sign_up", user=user["id"], method="password")
         return sign_in(request, user, "/app/?welcome=1")

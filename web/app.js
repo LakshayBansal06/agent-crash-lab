@@ -1080,14 +1080,30 @@
     if (S.mode === "static") list = [{ experiment_id: S.exp.experiment_id, name: S.exp.name, status: S.exp.status, created_at: S.exp.created_at, config: S.exp.config,
       headline: Object.fromEntries(agents().map((r) => [r, summary(r)])) }];
     else list = await api("/experiments");
-    page.innerHTML = `<div class="section-head" style="margin:0"><div><h1>Experiments</h1><p class="lede">An experiment runs one or more agent versions against a scenario set, repeatedly, with identical seeds.</p></div>
+    const lim = S.mode === "api" ? (await api("/whoami").catch(() => S.me))?.limits : null;
+    const canDelete = S.mode === "api";
+    page.innerHTML = `<div class="section-head" style="margin:0"><div><h1>Experiments</h1><p class="lede">An experiment runs one or more agent versions against a scenario set, repeatedly, with identical seeds.</p>
+      ${lim?.workspace_episodes ? `<p class="sub" id="quota">Your workspace stores ${lim.workspace_used.toLocaleString()} of ${lim.workspace_episodes.toLocaleString()} episodes. When a new experiment needs room, the oldest ones are removed first; regression tests are always kept.</p>` : ""}</div>
       ${S.mode === "api" ? '<a class="btn primary" href="#/experiments/new">New experiment</a>' : ""}</div>
-      <section class="section panel"><div class="table-wrap"><table class="table"><thead><tr><th>Experiment</th><th>Status</th><th>Agents</th><th class="num">Episodes</th><th>Success by agent</th></tr></thead><tbody>
+      <section class="section panel"><div class="table-wrap"><table class="table"><thead><tr><th>Experiment</th><th>Status</th><th>Agents</th><th class="num">Episodes</th><th>Success by agent</th>${canDelete ? '<th><span class="sr-only">Actions</span></th>' : ""}</tr></thead><tbody>
       ${list.map((e) => `<tr class="link" data-exp="${esc(e.experiment_id)}" data-status="${esc(e.status)}"><td>${esc(e.name)}<div class="sub">${esc(e.experiment_id)} · ${esc(e.created_at)}</div></td>
         <td>${statusHtml(e.status === "COMPLETED" ? "pass" : e.status === "FAILED" ? "fail" : "flaky", titleCase(e.status))}</td>
         <td>${esc((e.config.agents || []).join(", "))}</td><td class="num">${Object.values(e.headline || {}).reduce((a, h) => a + (h.episodes || 0), 0) || "—"}</td>
-        <td>${Object.entries(e.headline || {}).map(([k, h]) => `${esc(k)} ${pct(h.success_rate, 0)}`).join(" · ") || "—"}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">No experiments yet. ${S.mode === "api" ? '<a href="#/experiments/new">Start the sample experiment</a> or <a href="#/integrations">connect your own agent</a>.' : ""}</td></tr>`}
+        <td>${Object.entries(e.headline || {}).map(([k, h]) => `${esc(k)} ${pct(h.success_rate, 0)}`).join(" · ") || "—"}</td>
+        ${canDelete ? `<td class="num">${["QUEUED", "RUNNING"].includes(e.status) ? "" : `<button class="btn small danger-ghost" data-del="${esc(e.experiment_id)}" aria-label="Delete ${esc(e.name)}">Delete</button>`}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${canDelete ? 6 : 5}" class="empty">No experiments yet. ${S.mode === "api" ? '<a href="#/experiments/new">Start the sample experiment</a> or <a href="#/integrations">connect your own agent</a>.' : ""}</td></tr>`}
       </tbody></table></div></section>`;
+    page.querySelectorAll("[data-del]").forEach((b) => {
+      b.onclick = async (ev) => {
+        ev.stopPropagation();
+        const id = b.dataset.del, row = list.find((e) => e.experiment_id === id);
+        if (UI && !(await UI.confirm({ title: "Delete this experiment?", body: `“${row?.name || id}” and its runs, traces and failures will be removed for good. Regression tests made from it are kept.`, confirmLabel: "Delete experiment", danger: true }))) return;
+        const r = await action(b, "Deleting…", () => api(`/experiments/${encodeURIComponent(id)}/delete`, { method: "POST" }), () => "Experiment deleted");
+        if (!r) return;
+        if (S.exp?.experiment_id === id) S.exp = null;
+        route();
+      };
+      b.onkeydown = (ev) => ev.stopPropagation();
+    });
     page.querySelectorAll("tr[data-exp]").forEach((tr) => {
       tr.tabIndex = 0;
       const open = async () => {
@@ -1114,7 +1130,10 @@
     const form = $("#exp-form");
     const est = () => {
       const a = form.querySelectorAll('[name=agent]:checked').length, s = form.querySelectorAll('[name=sc]:checked').length, r = +$("#repeats").value || 0;
-      $("#estimate").textContent = `${a} agent${a === 1 ? "" : "s"} × ${s} scenarios × ${r} repeats = ${a * s * r} episodes.`;
+      const n = a * s * r, cap = S.me?.limits?.episodes_per_run;
+      $("#estimate").textContent = `${a} agent${a === 1 ? "" : "s"} × ${s} scenarios × ${r} repeats = ${n} episodes.`
+        + (cap && n > cap ? ` That's over the ${cap}-episode limit per run: choose fewer scenarios or repeats.` : "");
+      $("#estimate").classList.toggle("over", !!(cap && n > cap));
     };
     form.oninput = est; est();
     form.onsubmit = async (e) => {
@@ -1124,9 +1143,12 @@
       if (!body.agents.length || !body.scenario_ids.length) { failure("Select at least one agent and one scenario."); return; }
       if (!(body.repeats >= 1 && body.repeats <= 50)) { failure("Repeats must be between 1 and 50."); $("#repeats").focus(); return; }
       const episodes = body.agents.length * body.scenario_ids.length * body.repeats;
+      const cap = S.me?.limits?.episodes_per_run;
+      if (cap && episodes > cap) { failure(`A run holds at most ${cap} episodes; this one has ${episodes}.`); return; }
       if (UI && episodes > 300 && !(await UI.confirm({ title: `Start ${episodes} episodes?`, body: "Large experiments take longer and use one of the server's experiment slots until they finish.", confirmLabel: "Start experiment" }))) return;
       const r = await action(form.querySelector("[type=submit]"), "Starting…", () => api("/experiments", { method: "POST", body: JSON.stringify(body) }),
-        (x) => `Experiment started: ${x.episodes} episodes queued`);
+        (x) => `Experiment started: ${x.episodes} episodes queued`
+          + (x.removed_to_make_room?.length ? `. To make room, your ${x.removed_to_make_room.length === 1 ? "oldest experiment was" : `${x.removed_to_make_room.length} oldest experiments were`} removed.` : ""));
       if (r) location.hash = `#/live/${r.experiment_id}`;
     };
   }

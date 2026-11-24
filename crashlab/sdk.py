@@ -147,7 +147,7 @@ class Episode:
             "agent": ep.agent, "scenario_id": self.scenario["scenario_id"], "scenario_title": self.scenario.get("title"),
             "category": self.scenario["category"], "seed": self.seed, "repeat": self.repeat, "passed": card.passed,
             "score": card.score, "dimensions": card.dimensions, "termination": ep.termination, "steps": len(ep.actions),
-            "duration_ms": ep.duration_ms, "usage": ep.usage, "cost_inr": episode_cost_inr(ep.usage),
+            "duration_ms": ep.duration_ms, "usage": ep.usage, "cost_inr": episode_cost_inr(ep.usage, ep.agent.get("version")),
             "final_message": ep.final_message, "faults_activated": [f["fault_id"] for f in ep.fault_log],
             "failure_ids": [f.failure_id for f in fails], "primary_category": fails[0].category if fails else None,
             "scorecard": card.to_dict(), "events": ep.events, "initial_state": ep.initial_state,

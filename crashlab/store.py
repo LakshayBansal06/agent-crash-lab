@@ -110,6 +110,12 @@ MIGRATIONS: list[str] = [
       project_id TEXT NOT NULL, day TEXT NOT NULL, episodes INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (project_id, day)
     );
     """,
+    # 8 - which server process owns a live experiment, and when it last showed signs of life, so a restarting
+    #     process only fails experiments whose worker is really gone (several processes can share one database)
+    """
+    ALTER TABLE experiments ADD COLUMN owner TEXT;
+    ALTER TABLE experiments ADD COLUMN heartbeat TEXT;
+    """,
 ]
 SESSION_DAYS = 14
 RESET_MINUTES = 60
@@ -339,6 +345,14 @@ class Store:
                             (project_id, day, episodes))
         return daily_limit - used - episodes
 
+    def release_model_episodes(self, project_id: str, episodes: int, day: str) -> None:
+        """Give back episodes booked by a run that was cancelled or failed before it used them."""
+        if episodes <= 0:
+            return
+        with self._lock, self.db:
+            self.db.execute("UPDATE model_usage SET episodes = MAX(0, episodes - ?) WHERE project_id=? AND day=?",
+                            (int(episodes), project_id, day))
+
     def create_session(self, uid: str) -> str:
         token = secrets.token_urlsafe(32)
         with self._lock, self.db:
@@ -379,19 +393,72 @@ class Store:
         return self.get_user(row["user_id"]) if row else None
 
     # ---------------------------------------------------------- experiments --
-    def create_experiment(self, exp_id: str, name: str, config: dict[str, Any], project_id: str = DEFAULT_PROJECT) -> None:
+    def create_experiment(self, exp_id: str, name: str, config: dict[str, Any], project_id: str = DEFAULT_PROJECT,
+                          owner: str | None = None) -> None:
         with self._lock, self.db:
-            self.db.execute("INSERT INTO experiments(id, project_id, name, status, created_at, config) VALUES (?,?,?,?,?,?)",
-                            (exp_id, project_id, name, "QUEUED", _now(), json.dumps(config)))
+            now = _now()
+            self.db.execute("INSERT INTO experiments(id, project_id, name, status, created_at, config, owner, heartbeat) "
+                            "VALUES (?,?,?,?,?,?,?,?)", (exp_id, project_id, name, "QUEUED", now, json.dumps(config), owner, now))
 
-    def fail_unfinished(self) -> int:
-        """Experiments left QUEUED or RUNNING by a restart (their worker died with the process) become FAILED."""
+    def heartbeat(self, exp_id: str) -> None:
         with self._lock, self.db:
-            return self.db.execute("UPDATE experiments SET status='FAILED' WHERE status IN ('QUEUED','RUNNING')").rowcount
+            self.db.execute("UPDATE experiments SET heartbeat=? WHERE id=?", (_now(), exp_id))
+
+    def fail_unfinished(self, owner: str | None = None, stale_seconds: int = 180) -> int:
+        """Experiments left QUEUED or RUNNING by a dead worker become FAILED. With several server processes on one
+        database, only rows this process owned, or whose worker stopped beating ``stale_seconds`` ago, are touched:
+        a restarting process must never fail another process's live experiment."""
+        cutoff = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - stale_seconds))
+        with self._lock, self.db:
+            return self.db.execute(
+                "UPDATE experiments SET status='FAILED' WHERE status IN ('QUEUED','RUNNING') "
+                "AND ((? IS NOT NULL AND owner=?) OR COALESCE(heartbeat, created_at) < ?)", (owner, owner, cutoff)).rowcount
 
     def set_status(self, exp_id: str, status: str) -> None:
         with self._lock, self.db:
-            self.db.execute("UPDATE experiments SET status=? WHERE id=?", (status, exp_id))
+            self.db.execute("UPDATE experiments SET status=?, heartbeat=? WHERE id=?", (status, _now(), exp_id))
+
+    # --------------------------------------------------------------- quotas --
+    def project_runs(self, project_id: str) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM runs JOIN experiments e ON e.id = runs.experiment_id "
+                               "WHERE e.project_id=?", (project_id,)).fetchone()[0]
+
+    def used_bytes(self) -> int:
+        """Bytes the database really holds (pages in use; freed pages are reused before the file grows)."""
+        page = self.db.execute("PRAGMA page_size").fetchone()[0]
+        used = self.db.execute("PRAGMA page_count").fetchone()[0] - self.db.execute("PRAGMA freelist_count").fetchone()[0]
+        return int(page * used)
+
+    def delete_experiment(self, exp_id: str, project_id: str) -> bool:
+        """Remove a finished experiment with its runs, failures and reproductions. Regression tests made from it
+        stay: they are the point of having run it."""
+        with self._lock, self.db:
+            return self.db.execute("DELETE FROM experiments WHERE id=? AND project_id=? AND status NOT IN ('QUEUED','RUNNING')",
+                                   (exp_id, project_id)).rowcount > 0
+
+    def make_room(self, project_id: str, needed: int, quota: int, keep: str | None = None) -> list[str] | None:
+        """Free space for ``needed`` more runs by deleting the project's oldest finished experiments. Returns the
+        ids removed, or None when even an empty workspace couldn't hold them (nothing is deleted then)."""
+        if needed > quota:
+            return None
+        removed: list[str] = []
+        with self._lock:
+            used = self.project_runs(project_id)
+            if used + needed <= quota:
+                return removed
+            rows = self.db.execute(
+                "SELECT e.id, (SELECT COUNT(*) FROM runs WHERE runs.experiment_id=e.id) AS n FROM experiments e "
+                "WHERE e.project_id=? AND e.status NOT IN ('QUEUED','RUNNING') AND e.id IS NOT ? ORDER BY e.created_at",
+                (project_id, keep)).fetchall()
+            if used - sum(r["n"] for r in rows) + needed > quota:
+                return None
+            for r in rows:
+                if used + needed <= quota:
+                    break
+                self.delete_experiment(r["id"], project_id)
+                removed.append(r["id"])
+                used -= r["n"]
+        return removed
 
     def save_experiment(self, result: dict[str, Any], project_id: str = DEFAULT_PROJECT) -> None:
         summary = {k: v for k, v in result.items() if k not in ("runs", "failures", "reproductions")}

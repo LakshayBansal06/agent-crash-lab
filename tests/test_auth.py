@@ -267,3 +267,18 @@ def test_users_manage_their_own_api_keys(app):
     assert other.post(f"/api/v1/api-keys/{k.json()['id']}/revoke").status_code == 404  # not her workspace
     assert user.post(f"/api/v1/api-keys/{k.json()['id']}/revoke").status_code == 200
     assert keyed.get("/api/v1/whoami").status_code == 401
+
+
+def test_signup_requires_the_human_check_when_turnstile_is_configured(app, monkeypatch):
+    # Second review: throwaway accounts make per-account limits easy to dodge.
+    monkeypatch.setenv("TURNSTILE_SITE_KEY", "site-key")
+    monkeypatch.setenv("TURNSTILE_SECRET_KEY", "secret-key")
+    seen = []
+    app.state.turnstile_verifier = lambda secret, token, ip: seen.append(token) or token == "human"
+    c = client(app)
+    page = c.get("/signup")
+    assert 'class="cf-turnstile"' in page.text and "challenges.cloudflare.com" in page.headers["content-security-policy"]
+    data = {"name": "Bot", "email": "bot@example.com", "password": PW}
+    assert c.post("/signup", data={**data, "cf-turnstile-response": "robot"}).status_code == 403
+    assert c.post("/signup", data={**data, "cf-turnstile-response": "human"}).status_code == 303
+    assert seen == ["robot", "human"]

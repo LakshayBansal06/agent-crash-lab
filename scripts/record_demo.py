@@ -70,6 +70,27 @@ def slow_type(page: Page, selector: str, text: str) -> None:
     page.type(selector, text, delay=45)
 
 
+def compress(src: Path, dest: Path) -> None:
+    """The raw browser recording is ~18 MB. A two-pass VP9 encode of mostly still UI keeps text sharp at ~3 MB, so
+    the repository and every page view stay light. Needs ffmpeg on PATH, or `pip install imageio-ffmpeg`."""
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        try:
+            import imageio_ffmpeg
+
+            ff = imageio_ffmpeg.get_ffmpeg_exe()
+        except ImportError:
+            print("ffmpeg not found: keeping the uncompressed recording (install ffmpeg or imageio-ffmpeg)")
+            shutil.copyfile(src, dest)
+            return
+    common = [ff, "-hide_banner", "-loglevel", "error", "-y", "-i", str(src), "-c:v", "libvpx-vp9", "-b:v", "230k",
+              "-crf", "38", "-row-mt", "1", "-an"]
+    with tempfile.TemporaryDirectory() as tmp:
+        log = str(Path(tmp) / "pass")
+        subprocess.run([*common, "-cpu-used", "4", "-pass", "1", "-passlogfile", log, "-f", "webm", os.devnull], check=True)  # noqa: S603
+        subprocess.run([*common, "-cpu-used", "2", "-pass", "2", "-passlogfile", log, str(dest)], check=True)  # noqa: S603
+
+
 def start_server(db: Path) -> tuple[subprocess.Popen, str]:
     env = {**os.environ, "CRASHLAB_FORM_SECRET": "demo", "CRASHLAB_RATE_AUTH_PER_MIN": "1000", "PYTHONUNBUFFERED": "1"}
     exe = Path(sys.executable).with_name("crashlab.exe" if os.name == "nt" else "crashlab")
@@ -211,7 +232,7 @@ def main() -> None:
             video = page.video.path()
             ctx.close()
             browser.close()
-            shutil.copyfile(video, MEDIA / "demo.webm")
+            compress(Path(video), MEDIA / "demo.webm")
             print(f"wrote {MEDIA / 'demo.webm'} ({(MEDIA / 'demo.webm').stat().st_size / 1e6:.1f} MB)")
     finally:
         proc.terminate()

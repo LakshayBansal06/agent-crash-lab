@@ -365,6 +365,8 @@ pre.code {
 .ticker li { animation: none; }
 .empty { padding: 40px 20px; text-align: center; color: var(--muted); }
 .empty h3 { color: var(--ink); margin-bottom: 6px; }
+#estimate.over { color: var(--signal-ink, #b00e28); font-weight: 600; }
+#quota { margin-top: 6px; }
 .welcome { max-width: 880px; padding: 8px 0 32px; }
 .welcome .eyebrow { font: 600 12px/1 var(--mono, ui-monospace, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
 .welcome h1 { margin: 0 0 10px; }

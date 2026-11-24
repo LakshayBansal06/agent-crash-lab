@@ -84,7 +84,11 @@ def ddmin(items: list[Any], test: Callable[[list[Any]], bool], history: list[int
     return items
 
 
-def minimize(scenario: dict[str, Any], ep: EpisodeResult, failure: Failure) -> Reproduction:
+MAX_REPLAYS = 400  # ddmin is O(n^2) replays in the worst case; past this the best reduction so far is returned
+
+
+def minimize(scenario: dict[str, Any], ep: EpisodeResult, failure: Failure,
+             max_replays: int = MAX_REPLAYS) -> Reproduction:
     matches = _reproduces(failure)
     replays = 0
     cache: dict[tuple[int, ...], bool] = {}
@@ -93,6 +97,8 @@ def minimize(scenario: dict[str, Any], ep: EpisodeResult, failure: Failure) -> R
         nonlocal replays
         key = tuple(a.index for a in subset)
         if key not in cache:
+            if replays >= max_replays:
+                return False  # out of budget: treat untried subsets as "doesn't reproduce", keeping what we have
             replays += 1
             r = replay(scenario, subset, ep.seed, ep.agent)
             cache[key] = matches(diagnose(scenario, r, evaluate_episode(scenario, r)))

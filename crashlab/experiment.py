@@ -70,7 +70,7 @@ def run_experiment(
                     "seed": seed, "repeat": r, "status": "INCONCLUSIVE" if inconclusive else "COMPLETED",
                     "passed": card.passed and not inconclusive, "score": card.score,
                     "dimensions": card.dimensions, "termination": ep.termination, "steps": len(ep.actions),
-                    "duration_ms": ep.duration_ms, "usage": ep.usage, "cost_inr": episode_cost_inr(ep.usage),
+                    "duration_ms": ep.duration_ms, "usage": ep.usage, "cost_inr": episode_cost_inr(ep.usage, ep.agent.get("version")),
                     "final_message": ep.final_message, "faults_activated": [f["fault_id"] for f in ep.fault_log],
                     "failure_ids": [f.failure_id for f in fl],
                     "primary_category": fl[0].category if fl else None,

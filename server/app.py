@@ -33,7 +33,7 @@ import uuid
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Path as PathParam, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -41,7 +41,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from crashlab import __version__
@@ -66,6 +66,7 @@ API = "/api/v1"
 MODEL_MAX_REPEATS = 3
 MAX_ACTIVE_KEYS = 10
 MAX_INGESTED_RUNS = 500
+OWNER = uuid.uuid4().hex[:12]  # this server process; another process sharing the database has its own
 
 
 def ID() -> Any:  # noqa: N802 - a fresh Path() per route; FastAPI binds the parameter name to the instance
@@ -119,9 +120,17 @@ class LRU:
 
 
 # ------------------------------------------------------------------- models
+def unique_agents(agents: list[str]) -> list[str]:
+    """The same agent twice would give two runs the same id (one overwrites the other) and compare it with itself."""
+    if len(set(agents)) != len(agents):
+        raise ValueError("each agent can be listed only once")
+    return agents
+
+
 class ExperimentIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    agents: list[str] = Field(default_factory=lambda: ["v1", "v2"], min_length=1, max_length=4)
+    agents: Annotated[list[str], AfterValidator(unique_agents)] = Field(
+        default_factory=lambda: ["v1", "v2"], min_length=1, max_length=4)
     scenario_ids: list[str] | None = Field(None, max_length=500)
     repeats: int = Field(5, ge=1, le=50)
     base_seed: int = Field(2026, ge=0, le=2**31)
@@ -130,7 +139,8 @@ class ExperimentIn(BaseModel):
 
 class RegressionRunIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    agents: list[str] = Field(default_factory=lambda: ["v1", "v2"], min_length=1, max_length=4)
+    agents: Annotated[list[str], AfterValidator(unique_agents)] = Field(
+        default_factory=lambda: ["v1", "v2"], min_length=1, max_length=4)
     repeats: int = Field(3, ge=1, le=20)
 
 
@@ -179,11 +189,12 @@ def create_app(db_path: str | None = None) -> FastAPI:
     model_per_run = int(os.environ.get("CRASHLAB_MODEL_EPISODES_PER_RUN", "60"))
     model_per_day = int(os.environ.get("CRASHLAB_MODEL_EPISODES_PER_DAY", "200"))
 
-    def guard_model_spend(p: Principal, agents: list[str], scenarios: int, repeats: int) -> None:
-        """Claude and Gemini agents spend the server owner's API credit: admins only, small runs, a daily budget."""
+    def guard_model_spend(p: Principal, agents: list[str], scenarios: int, repeats: int) -> tuple[int, str]:
+        """Claude and Gemini agents spend the server owner's API credit: admins only, small runs, a daily budget.
+        Returns (episodes booked, UTC day booked on) so a cancelled or failed run can give back what it didn't use."""
         model = [a for a in agents if a in LLM_REFS]
         if not model:
-            return
+            return 0, ""
         if not p.can("admin"):
             raise HTTPException(403, "real-model agents (Claude, Gemini) spend this server's API credit, so only admins can run them")
         if repeats > MODEL_MAX_REPEATS:
@@ -193,14 +204,41 @@ def create_app(db_path: str | None = None) -> FastAPI:
             raise HTTPException(422, f"{episodes} real-model episodes requested; the limit per run is {model_per_run}")
         if store.reserve_model_episodes(p.project_id, episodes, model_per_day) is None:
             raise HTTPException(429, f"today's real-model budget ({model_per_day} episodes) is used up; it resets at 00:00 UTC")
+        return episodes, time.strftime("%Y-%m-%d", time.gmtime())
+
     max_jobs = int(os.environ.get("CRASHLAB_MAX_RUNNING", "4"))
-    stale = store.fail_unfinished()  # a deploy or crash killed their workers; never leave them RUNNING forever
+    # Fair use, so one account can't fill the disk or hold every worker (admins are exempt from the first two).
+    episodes_per_run = int(os.environ.get("CRASHLAB_EPISODES_PER_RUN", "600"))
+    project_quota = int(os.environ.get("CRASHLAB_PROJECT_MAX_RUNS", "2000"))
+    jobs_per_project = int(os.environ.get("CRASHLAB_JOBS_PER_PROJECT", "1"))
+    db_max_bytes = int(float(os.environ.get("CRASHLAB_DB_MAX_MB", "800")) * 1024 * 1024)
+
+    def guard_storage(p: Principal, episodes: int, keep: str | None = None) -> list[str]:
+        """Refuse work that would fill the disk, and keep each workspace within its quota by removing its oldest
+        finished experiments first. Returns the experiment ids that were removed to make room."""
+        if store.used_bytes() >= db_max_bytes:
+            log("storage_full", logging.WARNING, used=store.used_bytes(), limit=db_max_bytes)
+            raise HTTPException(507, "this server's storage is full; an admin needs to free space before new runs")
+        if p.can("admin"):
+            return []
+        removed = store.make_room(p.project_id, episodes, project_quota, keep=keep)
+        if removed is None:
+            raise HTTPException(413, f"a workspace holds at most {project_quota} episodes; this needs {episodes}. "
+                                     "Delete experiments or run fewer scenarios or repeats.")
+        for exp_id in removed:
+            cache.drop((p.project_id, "exp", exp_id))
+        if removed:
+            log("experiments_auto_removed", project=p.project_id, removed=removed)
+        return removed
+
+    stale = store.fail_unfinished(owner=OWNER)  # workers that died with a crash or deploy; never RUNNING forever
     log("startup", version=__version__, auth=mode, schema_version=store.schema_version, db=os.path.basename(store.path),
         interrupted_experiments=stale)
     reg_state: dict[str, dict[str, Any]] = {}  # project -> {"running": bool, "error": str | None}
 
     def prune_jobs(keep: int = 20) -> None:
         """Finished jobs only serve late stream subscribers; keep the newest few so memory stays bounded."""
+        store.fail_unfinished(owner=None)  # also catch workers that died in another process since our startup
         done = [k for k, j in jobs.items() if j.done]
         for k in done[:-keep]:
             jobs.pop(k, None)
@@ -333,6 +371,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
                "sdk_wheel": next((f"/sdk/{w.name}" for w in sorted((WEB_DIR / "sdk").glob("*.whl"))), None)}
         if p.key_id.startswith("user:") and (u := store.get_user(p.key_id[5:])):
             out["user"] = {k: u[k] for k in ("name", "email", "role")}
+        admin = p.can("admin")
+        out["limits"] = {"episodes_per_run": None if admin else episodes_per_run,
+                         "workspace_episodes": None if admin else project_quota,
+                         "workspace_used": store.project_runs(p.project_id)}
         return out
 
     # ------------------------------------------------------------- api keys
@@ -420,7 +462,12 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 raise HTTPException(422, f"unknown agent {a!r}")
             if key := missing_key(a):
                 raise HTTPException(422, f"agent {a!r} needs {key} set on the server")
-        if sum(1 for j in jobs.values() if not j.done) >= max_jobs:
+        admin = p.can("admin")
+        mine = sum(1 for j in jobs.values() if not j.done and j.project_id == p.project_id)
+        if mine >= (jobs_per_project + 1 if admin else jobs_per_project):
+            raise HTTPException(429, "your workspace already has an experiment running; wait for it or cancel it",
+                                headers={"Retry-After": "10"})
+        if not admin and sum(1 for j in jobs.values() if not j.done) >= max_jobs:  # admins are never locked out
             raise HTTPException(429, "too many experiments running; try again shortly", headers={"Retry-After": "10"})
         sc = load_scenarios()
         if body.scenario_ids:
@@ -428,15 +475,26 @@ def create_app(db_path: str | None = None) -> FastAPI:
             sc = [s for s in sc if s["scenario_id"] in wanted]
             if not sc:
                 raise HTTPException(422, "no matching scenarios")
-        guard_model_spend(p, body.agents, len(sc), body.repeats)
+        episodes = len(body.agents) * len(sc) * body.repeats
+        if not admin and episodes > episodes_per_run:
+            raise HTTPException(422, f"{episodes} episodes requested; a run holds at most {episodes_per_run}. "
+                                     "Choose fewer scenarios or repeats.")
+        booked, day = guard_model_spend(p, body.agents, len(sc), body.repeats)
+        try:
+            removed = guard_storage(p, episodes)
+        except HTTPException:
+            store.release_model_episodes(p.project_id, booked, day)  # refused: give the budget back
+            raise
         exp_id = f"exp_{uuid.uuid4().hex[:12]}"
         name = body.name or f"{' vs '.join(body.agents)} · {len(sc)} scenarios × {body.repeats}"
-        store.create_experiment(exp_id, name, body.model_dump(), project_id=p.project_id)
+        store.create_experiment(exp_id, name, body.model_dump(), project_id=p.project_id, owner=OWNER)
         prune_jobs()
         job = jobs[exp_id] = Job(exp_id, p.project_id)
         metrics.inc("experiments_started_total")
         log("experiment_queued", experiment=exp_id, project=p.project_id, key=p.key_id,
             episodes=len(body.agents) * len(sc) * body.repeats)
+
+        used = {"model": 0, "beat": time.monotonic()}
 
         def work() -> None:
             store.set_status(exp_id, "RUNNING")
@@ -445,6 +503,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 def progress(kind: str, data: dict[str, Any]) -> None:
                     if kind == "run.completed":
                         metrics.inc("episodes_total", passed=str(data["passed"]).lower())
+                        used["model"] += data.get("agent_ref") in LLM_REFS
+                        if time.monotonic() - used["beat"] > 15:  # proof of life for other server processes
+                            used["beat"] = time.monotonic()
+                            store.heartbeat(exp_id)
                     job.publish(kind, data)
 
                 res = run_experiment(body.agents, sc, repeats=body.repeats, base_seed=body.base_seed, name=name,
@@ -461,12 +523,13 @@ def create_app(db_path: str | None = None) -> FastAPI:
                 log("experiment_failed", logging.ERROR, exc_info=True, experiment=exp_id)
                 job.publish("experiment.failed", {"error": "experiment failed; see server logs", "experiment_id": exp_id})
             finally:
+                store.release_model_episodes(p.project_id, booked - used["model"], day)  # cancelled or failed early
                 job.done = True
                 job.publish("stream.end", {})
 
         pool.submit(work)
-        return {"experiment_id": exp_id, "status": "QUEUED", "episodes": len(body.agents) * len(sc) * body.repeats,
-                "stream": f"{API}/experiments/{exp_id}/stream"}
+        return {"experiment_id": exp_id, "status": "QUEUED", "episodes": episodes,
+                "stream": f"{API}/experiments/{exp_id}/stream", "removed_to_make_room": removed}
 
     @app.get(f"{API}/experiments")
     def list_experiments(p: Principal = requires("read")) -> list[dict[str, Any]]:
@@ -493,6 +556,18 @@ def create_app(db_path: str | None = None) -> FastAPI:
         job.cancel.set()
         log("experiment_cancel_requested", experiment=exp_id, key=p.key_id)
         return {"experiment_id": exp_id, "status": "CANCELLING"}
+
+    @app.post(f"{API}/experiments/{{exp_id}}/delete")
+    def delete_experiment(exp_id: str = ID(), p: Principal = requires("write")) -> dict[str, Any]:
+        job = jobs.get(exp_id)
+        if job and not job.done and job.project_id == p.project_id:
+            raise HTTPException(409, "cancel the experiment before deleting it")
+        if not store.delete_experiment(exp_id, p.project_id):
+            raise HTTPException(404, "not found")
+        cache.drop((p.project_id, "exp", exp_id))
+        jobs.pop(exp_id, None)
+        log("experiment_deleted", experiment=exp_id, key=p.key_id)
+        return {"experiment_id": exp_id, "deleted": True}
 
     @app.get(f"{API}/experiments/{{exp_id}}/runs")
     def experiment_runs(exp_id: str = ID(), p: Principal = requires("read")) -> list[dict[str, Any]]:
@@ -569,6 +644,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.post(f"{API}/failures/{{failure_id}}/minimize")
     def minimize_failure(failure_id: str = ID(), p: Principal = requires("write")) -> dict[str, Any]:
         f = _failure(failure_id, p.project_id)
+        if (f.get("reproduction") or {}).get("minimized_events"):  # deterministic: same failure, same reproduction
+            return f["reproduction"]
         run = _run(f["run_id"], p.project_id)
         repro = minimize(scenario_by_id(f["scenario_id"]), _episode_from_run(run), _failure_obj(f)).to_dict()
         store.save_reproduction(f["experiment_id"], repro)
@@ -605,17 +682,21 @@ def create_app(db_path: str | None = None) -> FastAPI:
         state = reg_state.setdefault(p.project_id, {"running": False, "error": None})
         if state["running"]:
             raise HTTPException(409, "the regression suite is already running")
-        guard_model_spend(p, body.agents, len(regs), body.repeats)
+        booked, day = guard_model_spend(p, body.agents, len(regs), body.repeats)
         state.update(running=True, error=None)
 
         def work() -> None:
+            ok = False
             try:
                 res = run_regressions(regs, body.agents, repeats=body.repeats)
                 store.save_regression_run(res, p.project_id)
+                ok = True
             except Exception:  # noqa: BLE001 - reported through /status, logged with a trace
                 log("regression_run_failed", logging.ERROR, exc_info=True, project=p.project_id)
                 state["error"] = "the regression run failed; see the server log"
             finally:
+                if not ok:
+                    store.release_model_episodes(p.project_id, booked, day)
                 state["running"] = False
 
         pool.submit(work)
@@ -652,6 +733,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         """SDK upload endpoint. The project always comes from the key, never the payload."""
         if len(store.experiment_runs_full(run.experiment_id, p.project_id)) >= MAX_INGESTED_RUNS:
             raise HTTPException(413, f"an SDK experiment holds at most {MAX_INGESTED_RUNS} runs; start a new one")
+        guard_storage(p, 1, keep=run.experiment_id)  # uploads count against the same workspace quota
         try:
             store.save_external_run(run.model_dump(), project_id=p.project_id)
         except PermissionError:

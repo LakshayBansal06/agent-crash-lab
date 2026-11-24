@@ -224,10 +224,16 @@ def test_restart_fails_experiments_its_workers_were_running(tmp_path, monkeypatc
 
     db = str(tmp_path / "restart.db")
     st = Store(db)
-    st.create_experiment("exp_interrupted", "x", {"agents": ["v2"]})
+    st.create_experiment("exp_interrupted", "x", {"agents": ["v2"]}, owner="dead-process")
     st.set_status("exp_interrupted", "RUNNING")
+    st.db.execute("UPDATE experiments SET heartbeat='2020-01-01T00:00:00Z' WHERE id='exp_interrupted'")  # worker gone
+    # Second review: another live server process sharing the database must keep its running experiment.
+    st.create_experiment("exp_other_process", "y", {"agents": ["v2"]}, owner="live-process")
+    st.set_status("exp_other_process", "RUNNING")
+    st.db.commit()
     app = create_app(db)
-    assert app.state.store.db.execute("SELECT status FROM experiments WHERE id='exp_interrupted'").fetchone()[0] == "FAILED"
+    status = dict(app.state.store.db.execute("SELECT id, status FROM experiments").fetchall())
+    assert status == {"exp_interrupted": "FAILED", "exp_other_process": "RUNNING"}
 
 
 def test_sdk_uploads_show_up_as_a_full_experiment(tmp_path, monkeypatch):
