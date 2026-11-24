@@ -36,7 +36,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
 from .observability import log
-from .security import SESSION_COOKIE, client_ip, public_url
+from .security import SESSION_COOKIE, auth_mode, client_ip, public_url
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 SITE_DIR = WEB_DIR / "site"
@@ -91,6 +91,19 @@ def ga_id() -> str | None:
     return v if GA_RE.match(v) else None
 
 
+def public_mode() -> bool:
+    """No sign-in (CRASHLAB_AUTH=public): calls to action open the dashboard instead of the sign-up page."""
+    return auth_mode() == "public"
+
+
+def start_link(href: str) -> str:
+    return "/app/" if public_mode() and href in ("/signup", "/login") else href
+
+
+def start_text(text: str) -> str:
+    return {"Create free account": "Open the dashboard", "Start free": "Try it free"}.get(text, text) if public_mode() else text
+
+
 def turnstile() -> tuple[str, str] | None:
     site, secret = _env("TURNSTILE_SITE_KEY"), _env("TURNSTILE_SECRET_KEY")
     return (site, secret) if site and secret else None
@@ -143,7 +156,9 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
     current = ' aria-current="page"'
     nav_html = "".join(f'<a href="{h}"{current if h == path else ""}>{t}</a>' for h, t in nav)
     user = request.app.state.store.session_user(request.cookies.get(SESSION_COOKIE))
-    if user:
+    if public_mode():
+        nav_html += '<a class="btn primary" href="/app/">Open the dashboard</a>'
+    elif user:
         nav_html += ('<a href="/account" class="nav-account">Account</a>'
                      + ('<a href="/admin">Admin</a>' if user["role"] == "admin" else "")
                      + '<a class="btn primary" href="/app/">Open dashboard</a>')
@@ -198,7 +213,7 @@ def layout(request: Request, *, path: str, title: str, description: str, body: s
 <footer class="site-foot">
   <div><a class="site-brand" href="/" aria-label="AGENT CRASH LAB home">{LOGO}<span>AGENT CRASH LAB</span></a>
   <p>Find AI-agent failures before your customers do.</p></div>
-  <nav aria-label="Footer"><a href="/">Home</a><a href="/#demo">Demo</a><a href="/#how">How it works</a><a href="/#results">Results</a><a href="/#pricing">Pricing</a><a href="/#faq">FAQ</a><a href="/contact">Contact</a><a href="/privacy">Privacy policy</a><a href="/signup">Create account</a><a href="/login">Sign in</a><a href="/app/">Dashboard</a><a href="/docs">API reference</a>{'<button type="button" class="linkish" id="cookie-settings">Cookie settings</button>' if ga else ''}</nav>
+  <nav aria-label="Footer"><a href="/">Home</a><a href="/#demo">Demo</a><a href="/#how">How it works</a><a href="/#results">Results</a><a href="/#pricing">Pricing</a><a href="/#faq">FAQ</a><a href="/contact">Contact</a><a href="/privacy">Privacy policy</a>{'' if public_mode() else '<a href="/signup">Create account</a><a href="/login">Sign in</a>'}<a href="/app/">Dashboard</a><a href="/docs">API reference</a>{'<button type="button" class="linkish" id="cookie-settings">Cookie settings</button>' if ga else ''}</nav>
   <p class="copy">© {year} AGENT CRASH LAB{updated}</p>
 </footer>
 </body>
@@ -275,7 +290,7 @@ def demo_section() -> str:
     <figure class="video-frame"><figcaption class="exhibit-tag">Exhibit A · recorded from the real app</figcaption><video controls preload="metadata" playsinline{poster} aria-describedby="demo-title">
       <source src="/static/media/demo.webm" type="video/webm">
       <a href="/static/media/demo.webm">Download the demo video</a></video></figure>
-    <div class="btn-row after-video"><a class="btn primary lg" href="/signup">Create free account and try it</a></div>
+    <div class="btn-row after-video"><a class="btn primary lg" href="{start_link('/signup')}">{'Open the dashboard' if public_mode() else 'Create free account'} and try it</a></div>
   </div>
 </section>"""
 
@@ -309,14 +324,14 @@ def landing_body() -> str:
     prices = "".join(f'<td><span class="price">{e(p["price"])}</span><span class="per">{e(p["per"])}</span></td>' for p in PLANS)
     rows = "".join(f'<tr><th scope="row">{e(label)}</th>' + "".join(f"<td>{e(v)}</td>" for v in vals) + "</tr>"
                    for label, vals in PLAN_ROWS)
-    ctas = "".join(f'<td><a class="btn{" primary" if primary else ""}" href="{href}">{e(text)}</a></td>'
+    ctas = "".join(f'<td><a class="btn{" primary" if primary else ""}" href="{start_link(href)}">{e(start_text(text))}</a></td>'
                    for text, href, primary in (p["cta"] for p in PLANS))
     # Phones get one plan per block; the comparison table is for wider screens.
     stacked = "".join(
         f'<article class="plan"><header><h3>{e(p["name"])}</h3><span class="for">{e(p["for"])}</span></header>'
         f'<p class="plan-price"><span class="price">{e(p["price"])}</span> <span class="per">{e(p["per"])}</span></p>'
         '<dl>' + "".join(f'<div><dt>{e(label)}</dt><dd>{e(vals[i])}</dd></div>' for label, vals in PLAN_ROWS) + '</dl>'
-        f'<a class="btn{" primary" if p["cta"][2] else ""} block" href="{p["cta"][1]}">{e(p["cta"][0])}</a></article>'
+        f'<a class="btn{" primary" if p["cta"][2] else ""} block" href="{start_link(p["cta"][1])}">{e(start_text(p["cta"][0]))}</a></article>'
         for i, p in enumerate(PLANS))
     jsonld = json.dumps({"@context": "https://schema.org", "@graph": [
         {"@type": "SoftwareApplication", "name": "AGENT CRASH LAB", "applicationCategory": "DeveloperApplication",
@@ -335,7 +350,7 @@ def landing_body() -> str:
         <h2 id="pc-title">Probable cause</h2>
         <p>The payment gateway committed the refund, then timed out. The agent retried <code>issue_refund</code> without checking the refund status, so order ORD-1001 was refunded twice while the customer was told it had been refunded once.</p>
       </div>
-      <div class="btn-row hero-actions"><a class="btn primary lg" href="/signup">Create free account</a><a class="btn lg" href="#demo">Watch the demo</a></div>
+      <div class="btn-row hero-actions"><a class="btn primary lg" href="{start_link('/signup')}">{start_text('Create free account')}</a><a class="btn lg" href="#demo">Watch the demo</a></div>
       <p class="fine">Free to start. No card needed.</p>
     </div>
     <figure class="rail" aria-labelledby="rail-cap">
@@ -401,7 +416,7 @@ crashlab demo</code></pre></div>
 <section class="closing" aria-labelledby="close-title">
   <h2 id="close-title">Open your first investigation</h2>
   <p>Create a free account, watch the demo, and crash-test an agent in the same sitting.</p>
-  <div class="btn-row"><a class="btn primary lg" href="/signup">Create free account</a><a class="btn lg" href="/contact">Request a pilot</a></div>
+  <div class="btn-row"><a class="btn primary lg" href="{start_link('/signup')}">{start_text('Create free account')}</a><a class="btn lg" href="/contact">Request a pilot</a></div>
 </section>
 <script type="application/ld+json">{jsonld}</script>
 """
@@ -704,6 +719,8 @@ def search_items() -> list[dict[str, str]]:
         {"title": "API reference", "subtitle": "Interactive REST documentation", "url": "/docs", "text": "api rest openapi swagger"},
     ]
     items += [{"title": q, "subtitle": "FAQ", "url": f"/#faq-{i}", "text": a} for i, (q, a) in enumerate(FAQ, 1)]
+    if public_mode():  # no account pages to search for
+        items = [i for i in items if i["url"] not in ("/signup", "/login")]
     return items
 
 

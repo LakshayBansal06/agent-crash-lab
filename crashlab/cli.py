@@ -335,7 +335,8 @@ def cmd_serve(args) -> int:
         print(c("refusing to start: CRASHLAB_AUTH=off on a non-loopback address would expose the API", RED), file=sys.stderr)
         return 2
     os.environ.setdefault("PORT", str(args.port))  # for the first-run setup link
-    mode = "local, sign-in off (loopback only)" if os.environ["CRASHLAB_AUTH"] == "off" else "sign-in required"
+    mode = {"off": "local, sign-in off (loopback only)",
+            "public": "public: no sign-in, a private workspace per browser"}.get(os.environ["CRASHLAB_AUTH"], "sign-in required")
     print(c(f"AGENT CRASH LAB on http://{args.host}:{args.port}  ·  {mode}", BOLD))
     uvicorn.run("server.app:app", host=args.host, port=args.port, reload=False, proxy_headers=False,
                 log_level="warning")

@@ -28,6 +28,7 @@ import logging
 import os
 import queue
 import threading
+import secrets
 import time
 import uuid
 from collections import OrderedDict
@@ -58,7 +59,7 @@ from crashlab.store import Principal, Store
 from .observability import Metrics, log
 from .auth import mount_auth, print_setup_link
 from .site import mount_site
-from .security import (DOCS_CSP, ID_PATTERN, MAX_BODY_BYTES, SECURITY_HEADERS, auth_mode, classify, client_id, client_ip, cors_origins,
+from .security import (DOCS_CSP, ID_PATTERN, MAX_BODY_BYTES, SECURITY_HEADERS, VISITOR_COOKIE, auth_mode, classify, client_id, client_ip, cors_origins,
                        rate_limiter, requires)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -242,6 +243,17 @@ def create_app(db_path: str | None = None) -> FastAPI:
         done = [k for k, j in jobs.items() if j.done]
         for k in done[:-keep]:
             jobs.pop(k, None)
+
+    @app.middleware("http")
+    async def visitor_cookie(request: Request, call_next: Any) -> Response:
+        """Public mode: the first visit gets a random, HttpOnly cookie that keys its private workspace."""
+        if auth_mode() != "public" or request.cookies.get(VISITOR_COOKIE):
+            return await call_next(request)
+        request.state.visitor = token = secrets.token_urlsafe(32)
+        response = await call_next(request)
+        response.set_cookie(VISITOR_COOKIE, token, max_age=365 * 86400, httponly=True, samesite="lax",
+                            secure=request.url.scheme == "https", path="/")
+        return response
 
     # compress JSON and static assets; SSE is excluded by Starlette (text/event-stream is not buffered)
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)

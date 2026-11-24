@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 CRASHLAB_DB=/data/crashlab.db CRASHLAB_AUTH=required
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 CRASHLAB_DB=/data/crashlab.db CRASHLAB_AUTH=public
 COPY pyproject.toml README.md requirements.lock ./
 COPY crashlab ./crashlab
 COPY server ./server

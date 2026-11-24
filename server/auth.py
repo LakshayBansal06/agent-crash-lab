@@ -35,7 +35,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from .observability import log
-from .security import SESSION_COOKIE, client_ip, public_url, same_origin
+from .security import SESSION_COOKIE, auth_mode, client_ip, public_url, same_origin
 from .site import EMAIL_RE, LOGO, ga_id, layout, site_csp, turnstile, verify_turnstile
 
 GOOGLE_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -157,10 +157,22 @@ def google_button(next_path: str, label: str = "Continue with Google") -> str:
             '<div class="or" role="separator"><span>or use email</span></div>')
 
 
+ACCOUNT_PAGES = frozenset({"/login", "/logout", "/signup", "/setup", "/forgot", "/reset"})
+
+
 # ------------------------------------------------------------------- routes
 def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[str, str], None] | None = None) -> None:
     store, limiter = app.state.store, app.state.limiter
     call = http or google_http
+
+    @app.middleware("http")
+    async def no_accounts_in_public_mode(request: Request, call_next: Callable[..., Any]) -> Response:
+        """Public mode has no sign-in: every account page sends people straight to their dashboard.
+        Setting CRASHLAB_AUTH=required brings all of these back unchanged."""
+        path = request.url.path
+        if auth_mode() == "public" and (path in ACCOUNT_PAGES or path.startswith(("/admin", "/auth/", "/account"))):
+            return RedirectResponse("/app/", status_code=303)
+        return await call_next(request)
     mail = mailer or send_reset_email
     signer = (_env("CRASHLAB_FORM_SECRET").encode() or secrets.token_bytes(32))
     # The first-admin link must survive restarts: a free host sleeps after 15 idle minutes and wipes its disk on
@@ -653,7 +665,7 @@ def mount_auth(app: FastAPI, *, http: HttpCall | None = None, mailer: Callable[[
 
 def print_setup_link(app: FastAPI) -> None:
     """On a fresh install, print the one-time link that creates the first admin."""
-    if app.state.store.count_admins() == 0:
+    if app.state.store.count_admins() == 0 and auth_mode() == "required":  # public mode has no accounts
         base = public_url() or "http://127.0.0.1:" + os.environ.get("PORT", "8000")
         print(f"\n  FIRST RUN: create your admin account here (one-time link):\n  {base}/setup?token={app.state.setup_token}\n",
               flush=True)

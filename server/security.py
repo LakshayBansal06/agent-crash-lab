@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
+import re
 import os
 import threading
 import time
@@ -39,10 +40,25 @@ def user_principal(user: dict) -> Principal:
 
 
 def auth_mode() -> str:
+    """required: accounts and sign-in. public: no sign-in pages; every browser gets its own private workspace
+    with read/write (never admin) access. off: one local admin workspace, loopback only."""
     mode = os.environ.get("CRASHLAB_AUTH", "required").lower()
-    if mode not in ("required", "off"):
-        raise RuntimeError("CRASHLAB_AUTH must be 'required' or 'off'")
+    if mode not in ("required", "public", "off"):
+        raise RuntimeError("CRASHLAB_AUTH must be 'required', 'public' or 'off'")
     return mode
+
+
+VISITOR_COOKIE = "acl_visitor"
+_VISITOR_RE = re.compile(r"^[A-Za-z0-9_-]{32,64}$")
+
+
+def visitor_principal(token: str | None) -> Principal | None:
+    """Public mode: a browser's random cookie maps to its own workspace. Read and write only, so a visitor can
+    never reach admin features (real-model runs that spend API credit, the admin console, contact messages)."""
+    if not token or not _VISITOR_RE.match(token):
+        return None
+    vid = hashlib.sha256(token.encode()).hexdigest()[:20]
+    return Principal(f"visitor:{vid}", f"v-{vid}", frozenset({"read", "write"}))
 
 
 def is_loopback(host: str) -> bool:
@@ -62,12 +78,17 @@ def requires(scope: str):
     401 = who are you?  403 = you can't do that."""
 
     def dep(request: Request) -> Principal:
-        if auth_mode() == "off":
+        mode = auth_mode()
+        if mode == "off":
             request.state.principal = LOCAL_PRINCIPAL
             return LOCAL_PRINCIPAL
         store = request.app.state.store
         token = bearer(request)
         p = store.authenticate(token) if token else None
+        if mode == "public" and p is None and not token:
+            p = visitor_principal(request.cookies.get(VISITOR_COOKIE) or getattr(request.state, "visitor", None))
+            if p and request.method not in SAFE_METHODS and not same_origin(request):
+                raise HTTPException(403, "cross-site request blocked")
         if p is None and not token:
             user = store.session_user(request.cookies.get(SESSION_COOKIE))
             if user:
