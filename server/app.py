@@ -48,7 +48,7 @@ from crashlab import __version__
 from crashlab.agents import LLM_REFS, REGISTRY, missing_key
 from crashlab.diagnosis import Failure
 from crashlab.environments import make_environment
-from crashlab.experiment import run_experiment, run_regressions
+from crashlab.experiment import assemble_ingested, run_experiment, run_regressions
 from crashlab.minimizer import Reproduction, minimize
 from crashlab.regression import generate_regression
 from crashlab.runner import EpisodeResult, RecordedAction
@@ -64,6 +64,8 @@ from .security import (DOCS_CSP, ID_PATTERN, MAX_BODY_BYTES, SECURITY_HEADERS, a
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 API = "/api/v1"
 MODEL_MAX_REPEATS = 3
+MAX_ACTIVE_KEYS = 10
+MAX_INGESTED_RUNS = 500
 
 
 def ID() -> Any:  # noqa: N802 - a fresh Path() per route; FastAPI binds the parameter name to the instance
@@ -327,18 +329,31 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.get(f"{API}/whoami")
     def whoami(p: Principal = requires("read")) -> dict[str, Any]:
-        out = {"key_id": p.key_id, "project_id": p.project_id, "scopes": sorted(p.scopes), "auth": auth_mode()}
+        out = {"key_id": p.key_id, "project_id": p.project_id, "scopes": sorted(p.scopes), "auth": auth_mode(),
+               "sdk_wheel": next((f"/sdk/{w.name}" for w in sorted((WEB_DIR / "sdk").glob("*.whl"))), None)}
         if p.key_id.startswith("user:") and (u := store.get_user(p.key_id[5:])):
             out["user"] = {k: u[k] for k in ("name", "email", "role")}
         return out
 
     # ------------------------------------------------------------- api keys
+    # Every signed-in user manages keys for their own workspace (that is how their SDK, CLI and CI connect).
+    # Keys themselves can't mint keys, so a leaked key can't multiply; only admins can grant the admin scope.
+    def key_manager(p: Principal) -> None:
+        if not (p.key_id.startswith("user:") or p.can("admin")):
+            raise HTTPException(403, "API keys are managed from a signed-in session (or with an admin key)")
+
     @app.get(f"{API}/api-keys")
-    def list_keys(p: Principal = requires("admin")) -> list[dict[str, Any]]:
+    def list_keys(p: Principal = requires("write")) -> list[dict[str, Any]]:
+        key_manager(p)
         return store.list_api_keys(p.project_id)
 
     @app.post(f"{API}/api-keys", status_code=201)
-    def create_key(body: KeyIn, p: Principal = requires("admin")) -> dict[str, Any]:
+    def create_key(body: KeyIn, p: Principal = requires("write")) -> dict[str, Any]:
+        key_manager(p)
+        if "admin" in body.scopes and not p.can("admin"):
+            raise HTTPException(403, "only admins can create admin keys")
+        if sum(1 for k in store.list_api_keys(p.project_id) if not k["revoked_at"]) >= MAX_ACTIVE_KEYS:
+            raise HTTPException(409, f"a workspace can have at most {MAX_ACTIVE_KEYS} active keys; revoke one first")
         try:
             k = store.create_api_key(p.project_id, body.name, body.scopes)
         except ValueError as exc:
@@ -347,7 +362,8 @@ def create_app(db_path: str | None = None) -> FastAPI:
         return k  # the only time the plaintext key is ever returned
 
     @app.post(f"{API}/api-keys/{{key_id}}/revoke")
-    def revoke_key(key_id: str = ID(), p: Principal = requires("admin")) -> dict[str, Any]:
+    def revoke_key(key_id: str = ID(), p: Principal = requires("write")) -> dict[str, Any]:
+        key_manager(p)
         if not store.revoke_api_key(key_id, p.project_id):
             raise HTTPException(404, "not found")
         log("api_key_revoked", key=key_id, by=p.key_id)
@@ -634,16 +650,28 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.post(f"{API}/ingest/runs", status_code=201)
     def ingest_run(run: IngestRun, p: Principal = requires("write")) -> dict[str, Any]:
         """SDK upload endpoint. The project always comes from the key, never the payload."""
+        if len(store.experiment_runs_full(run.experiment_id, p.project_id)) >= MAX_INGESTED_RUNS:
+            raise HTTPException(413, f"an SDK experiment holds at most {MAX_INGESTED_RUNS} runs; start a new one")
         try:
             store.save_external_run(run.model_dump(), project_id=p.project_id)
         except PermissionError:
             raise HTTPException(409, "id already in use") from None
+        # rebuild the experiment summary so the dashboard shows SDK runs exactly like built-in ones
+        exp = store.get_experiment(run.experiment_id, p.project_id)
+        result = assemble_ingested(run.experiment_id, exp["name"], exp["created_at"],
+                                   store.experiment_runs_full(run.experiment_id, p.project_id),
+                                   {s["scenario_id"]: s for s in load_scenarios()})
+        if result["runs"]:
+            store.save_experiment(result, project_id=p.project_id)
         cache.drop((p.project_id, "run", run.run_id))
+        cache.drop((p.project_id, "exp", run.experiment_id))
         return {"run_id": run.run_id, "stored": True}
 
     # ----------------------------------------------------------------- web
     if WEB_DIR.exists():
         app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
+        if (WEB_DIR / "sdk").is_dir():  # the SDK as a pip-installable wheel, built into the Docker image
+            app.mount("/sdk", StaticFiles(directory=WEB_DIR / "sdk"), name="sdk")
 
         @app.get("/app/", include_in_schema=False)
         def dashboard() -> FileResponse:

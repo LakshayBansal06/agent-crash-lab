@@ -454,6 +454,11 @@ class Store:
                                "WHERE runs.experiment_id=? AND e.project_id=? ORDER BY runs.rowid", (exp_id, project_id))
         return [_run_light(json.loads(r["data"])) for r in rows]
 
+    def experiment_runs_full(self, exp_id: str, project_id: str) -> list[dict[str, Any]]:
+        rows = self.db.execute("SELECT runs.data FROM runs JOIN experiments e ON e.id = runs.experiment_id "
+                               "WHERE runs.experiment_id=? AND e.project_id=? ORDER BY runs.rowid", (exp_id, project_id))
+        return [json.loads(r["data"]) for r in rows]
+
     def save_external_run(self, run: dict[str, Any], project_id: str = DEFAULT_PROJECT) -> None:
         exp = run["experiment_id"]
         with self._lock, self.db:

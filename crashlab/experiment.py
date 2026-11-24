@@ -272,6 +272,51 @@ def compare(runs: list[dict[str, Any]], base: str, cand: str) -> dict[str, Any]:
     }
 
 
+def assemble_ingested(exp_id: str, name: str, created_at: str, runs: list[dict[str, Any]],
+                      scenarios: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Build the same experiment result the dashboard shows for built-in runs, from runs an SDK uploaded
+    (each carries its scorecard and diagnosed failures). Failure ids are recomputed from the run id, so an
+    upload can never claim another workspace's failure record."""
+    import hashlib as _h
+
+    runs = [r for r in runs if r.get("scorecard") and r.get("scenario_id") in scenarios]
+    for r in runs:
+        r.setdefault("status", "COMPLETED")
+    fields = Failure.__dataclass_fields__
+    failures: list[Failure] = []
+    for r in runs:
+        ids = {}
+        for f in r.get("failures") or []:
+            if not isinstance(f, dict) or not f.get("category"):
+                continue
+            fid = "FL-" + _h.sha1(f"{r['run_id']}|{f['category']}".encode(), usedforsecurity=False).hexdigest()[:10]
+            ids[f.get("failure_id")] = fid
+            try:
+                failures.append(Failure(**{**{k: v for k, v in f.items() if k in fields}, "failure_id": fid,
+                                           "run_id": r["run_id"], "scenario_id": r["scenario_id"], "agent": r["agent"]}))
+            except TypeError:
+                continue  # malformed upload: keep the run, skip the failure
+        r["failure_ids"] = [ids.get(i, i) for i in r.get("failure_ids", []) if i in ids]
+        r.pop("failures", None)
+    agents = sorted({r["agent_ref"] for r in runs})
+    repeats = max((r.get("repeat", 0) for r in runs), default=0) + 1
+    clusters = cluster_failures(failures, runs)
+    for cl in clusters:
+        cl.pop("_rep", None)
+        cl.pop("_repro", None)
+    return {
+        "experiment_id": exp_id, "name": name, "status": "COMPLETED", "created_at": created_at,
+        "config": {"source": "sdk", "agents": agents, "scenario_ids": sorted({r["scenario_id"] for r in runs}),
+                   "repeats": repeats, "weights": DEFAULT_WEIGHTS},
+        "dimension_labels": DIMENSION_LABELS,
+        "summaries": {ref: {**summarize([r for r in runs if r["agent_ref"] == ref], scenarios, repeats), "inconclusive": 0}
+                      for ref in agents},
+        "comparison": compare(runs, agents[0], agents[1]) if len(agents) >= 2 else None,
+        "clusters": clusters, "failure_modes": failure_modes(clusters),
+        "failures": [f.to_dict() for f in failures], "reproductions": {}, "regressions": [], "runs": runs,
+    }
+
+
 def run_regressions(regressions: list[dict[str, Any]], agents: list[str], repeats: int = 3,
                     base_seed: int = 4242) -> dict[str, Any]:
     rows = []

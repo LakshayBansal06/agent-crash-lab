@@ -115,7 +115,9 @@
   }
   const success = (m) => toast(m, "ok");
   const failure = (m) => toast(m, "err");
-  const friendly = (e) => (e instanceof TypeError ? "Can't reach the server. Check that crashlab serve is running." : e.message);
+  // fetch() rejects with a TypeError only when the network fails; any other TypeError is a bug and should say so
+  const friendly = (e) => (e instanceof TypeError && /fetch|network|load failed/i.test(e.message)
+    ? "Can't reach the server. Check your connection and that the server is running." : e.message);
 
   // Run a button's action: disable it while busy, then report success or the error, and always re-enable.
   async function action(btn, busyLabel, fn, okMsg) {
@@ -1172,6 +1174,7 @@
   VIEWS.integrations = async (page) => {
     crumbs(["Engineering", "Integrations"]);
     page.innerHTML = `<h1>Integrations</h1><p class="lede">Connect any agent. Your code drives the tools; Crash Lab injects the faults, records the trace and evaluates the outcome.</p>
+      ${S.mode === "api" && S.me && S.me.user ? '<section class="section panel panel-pad" id="connect"></section>' : ""}
       <section class="section grid-2">
         <div class="panel panel-pad"><h2>Python SDK</h2><p class="sub" style="margin:4px 0 10px">Wrap an agent function and test it against any scenario.</p>
 <pre class="code">from crashlab.sdk import CrashLab, ToolCallFailed
@@ -1222,7 +1225,58 @@ export GEMINI_API_KEY=…         # Gemini (GEMINI_MODEL to pick a model)
 crashlab run --agents v2 gemini --repeats 3</pre>
 <p class="sub" style="margin-top:10px">Planned adapters: OpenAI Agents SDK, LangGraph, CrewAI and a generic HTTP agent, all emitting the same event schema.</p></div>
       </section>`;
+    if ($("#connect")) connectPanel($("#connect"));
   };
+
+  // "Connect your agent": a key (shown once), the SDK installed from this site, a test of the user's own agent.
+  async function connectPanel(box) {
+    const origin = location.origin;
+    const install = S.me.sdk_wheel ? `pip install "${origin}${S.me.sdk_wheel}"` : `pip install -e ".[server]"   # from the project folder`;
+    const draw = (keys, fresh) => {
+      const live = keys.filter((k) => !k.revoked_at);
+      box.innerHTML = `<h2>Connect your own agent</h2>
+        <p class="sub" style="margin:4px 0 16px">Three steps. Your agent runs on your machine; only the results are uploaded to your private workspace.</p>
+        <ol class="connect-steps">
+          <li><b>Create an API key</b>
+            ${fresh ? `<div class="callout red" role="status" style="margin:10px 0"><b>Copy this key now: it won't be shown again.</b><pre class="code">${esc(fresh)}</pre></div>` : ""}
+            <form class="btn-row" id="key-new" style="margin-top:10px"><label class="sr-only" for="key-name">Key name</label>
+              <input id="key-name" maxlength="80" required placeholder="Name, e.g. my-laptop" style="height:34px;padding:0 10px;border:1px solid var(--line);background:var(--surface);min-width:0;flex:1;max-width:280px">
+              <button class="btn primary" type="submit">Create key</button></form>
+            ${live.length ? `<div class="table-wrap" style="margin-top:12px"><table class="table"><thead><tr><th>Name</th><th>Access</th><th>Created</th><th>Last used</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody>
+              ${live.map((k) => `<tr><td><b>${esc(k.name)}</b><div class="sub mono">${esc(k.id)}</div></td><td>${esc(k.scopes)}</td><td class="sub">${esc((k.created_at || "").slice(0, 10))}</td><td class="sub">${esc((k.last_used_at || "never").slice(0, 10))}</td>
+                <td><button class="btn small danger-ghost" data-revoke="${esc(k.id)}" data-name="${esc(k.name)}">Revoke</button></td></tr>`).join("")}
+              </tbody></table></div>` : '<p class="sub" style="margin-top:8px">No keys yet.</p>'}</li>
+          <li><b>Install the SDK</b><pre class="code">${esc(install)}</pre></li>
+          <li><b>Test your agent</b><p class="sub" style="margin:4px 0 0">Replace <code>my_agent</code> with yours: it receives the task, the tools and the session context.</p>
+<pre class="code">from crashlab.sdk import CrashLab
+
+lab = CrashLab(base_url="${esc(origin)}", api_key="PASTE_YOUR_KEY")
+
+def my_agent(task, tools, context):
+    order = tools.get_order(order_id="ORD-1001")
+    tools.issue_refund(order_id="ORD-1001", amount=order["amount"])
+    return "Your refund has been initiated."
+
+print(lab.test(my_agent, scenarios=["ACL-ECOM-0001", "ACL-ECOM-0002"], repeats=3).summary())</pre>
+            <p class="sub">Results appear under <a href="#/experiments">Experiments</a> as "SDK ingest". Every scenario and its tools are listed under <a href="#/datasets">Datasets</a>.</p></li>
+        </ol>`;
+      $("#key-new").onsubmit = async (e) => {
+        e.preventDefault();
+        const name = $("#key-name").value.trim();
+        if (!name) return;
+        const k = await action(e.submitter || $("#key-new button"), "Creating…",
+          () => api("/api-keys", { method: "POST", body: JSON.stringify({ name, scopes: ["read", "write"] }) }), "Key created. Copy it now.");
+        if (k) draw(await api("/api-keys"), k.key);
+      };
+      box.querySelectorAll("[data-revoke]").forEach((b) => (b.onclick = async () => {
+        if (UI && !(await UI.confirm({ title: `Revoke "${b.dataset.name}"?`, body: "Anything using this key (scripts, CI) stops working immediately. This can't be undone.", confirmLabel: "Revoke key", danger: true }))) return;
+        const r = await action(b, "Revoking…", () => api(`/api-keys/${encodeURIComponent(b.dataset.revoke)}/revoke`, { method: "POST" }), "Key revoked");
+        if (r) draw(await api("/api-keys"), null);
+      }));
+    };
+    box.innerHTML = '<div class="skeleton"><i class="h"></i><i></i><i></i></div>';
+    try { draw(await api("/api-keys"), null); } catch (e) { box.innerHTML = `<p class="sub">Couldn't load your API keys: ${esc(friendly(e))}</p>`; }
+  }
 
   boot();
 })();

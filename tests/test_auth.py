@@ -233,3 +233,20 @@ def test_only_admins_spend_real_model_credit(app, monkeypatch):
     # built-in agents stay free for everyone
     assert user.post("/api/v1/experiments", json={"agents": ["v2"], "repeats": 1,
                                                    "scenario_ids": ["ACL-ECOM-0001"]}).status_code == 202
+
+
+def test_users_manage_their_own_api_keys(app):
+    # A signed-up user needs a key to connect their own agent (SDK, CLI, CI).
+    user = client(app)
+    signup(user)
+    k = user.post("/api/v1/api-keys", json={"name": "laptop", "scopes": ["read", "write"]})
+    assert k.status_code == 201 and k.json()["key"].startswith("acl_")
+    assert user.post("/api/v1/api-keys", json={"name": "x", "scopes": ["admin"]}).status_code == 403
+    keyed = TestClient(app, headers={"Authorization": f"Bearer {k.json()['key']}"})
+    assert keyed.get("/api/v1/whoami").json()["project_id"] == user.get("/api/v1/whoami").json()["project_id"]
+    assert keyed.post("/api/v1/api-keys", json={"name": "y", "scopes": ["read"]}).status_code == 403  # keys can't mint keys
+    other = client(app)
+    signup(other, email="eve@example.com", name="Eve")
+    assert other.post(f"/api/v1/api-keys/{k.json()['id']}/revoke").status_code == 404  # not her workspace
+    assert user.post(f"/api/v1/api-keys/{k.json()['id']}/revoke").status_code == 200
+    assert keyed.get("/api/v1/whoami").status_code == 401

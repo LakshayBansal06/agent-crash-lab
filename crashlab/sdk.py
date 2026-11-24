@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import queue
 import threading
+import uuid
 from typing import Any
 from collections.abc import Callable
 
@@ -103,8 +104,8 @@ class _Tools:
 
 class Episode:
     def __init__(self, lab: CrashLab, scenario: dict[str, Any], seed: int, agent_name: str, agent_version: str,
-                 run_id: str) -> None:
-        self.lab, self.scenario, self.seed, self.run_id = lab, scenario, seed, run_id
+                 run_id: str, repeat: int = 0) -> None:
+        self.lab, self.scenario, self.seed, self.run_id, self.repeat = lab, scenario, seed, run_id, repeat
         self.bridge = _BridgeAgent(agent_name, agent_version)
         self.report: dict[str, Any] | None = None
         self._result: dict[str, Any] = {}
@@ -144,7 +145,7 @@ class Episode:
         self.report = {
             "run_id": ep.run_id, "experiment_id": self.lab.experiment_id, "agent_ref": f"{ep.agent['name']}@{ep.agent['version']}",
             "agent": ep.agent, "scenario_id": self.scenario["scenario_id"], "scenario_title": self.scenario.get("title"),
-            "category": self.scenario["category"], "seed": self.seed, "repeat": 0, "passed": card.passed,
+            "category": self.scenario["category"], "seed": self.seed, "repeat": self.repeat, "passed": card.passed,
             "score": card.score, "dimensions": card.dimensions, "termination": ep.termination, "steps": len(ep.actions),
             "duration_ms": ep.duration_ms, "usage": ep.usage, "cost_inr": episode_cost_inr(ep.usage),
             "final_message": ep.final_message, "faults_activated": [f["fault_id"] for f in ep.fault_log],
@@ -176,33 +177,37 @@ class Report:
 
 class CrashLab:
     def __init__(self, base_url: str | None = None, api_key: str | None = None, project_id: str = "default",
-                 experiment_id: str = "sdk-local") -> None:
-        self.base_url, self.api_key, self.project_id, self.experiment_id = base_url, api_key, project_id, experiment_id
+                 experiment_id: str | None = None) -> None:
+        # Uploads are grouped under one experiment id. A fixed default made every user on a shared server
+        # collide on the same id, so each test() run gets a fresh one unless the caller pins it.
+        self.base_url, self.api_key, self.project_id = base_url, api_key, project_id
+        self._pinned_id = experiment_id
+        self.experiment_id = experiment_id or f"sdk-{uuid.uuid4().hex[:12]}"
 
     def scenarios(self) -> list[dict[str, Any]]:
         return load_scenarios()
 
     def episode(self, scenario: str | dict[str, Any], seed: int = 0, agent_name: str = "my-agent",
-                agent_version: str = "dev", run_id: str | None = None) -> Episode:
+                agent_version: str = "dev", run_id: str | None = None, repeat: int = 0) -> Episode:
         sc = scenario_by_id(scenario) if isinstance(scenario, str) else scenario
         return Episode(self, sc, seed, agent_name, agent_version,
-                       run_id or f"{self.experiment_id}.{agent_version}.{sc['scenario_id'][-4:]}.s{seed}")
+                       run_id or f"{self.experiment_id}.{agent_version}.{sc['scenario_id'][-4:]}.s{seed}", repeat)
 
     def test(self, agent_fn: Callable[[str, Any, dict[str, Any]], str], scenarios: list[str] | None = None,
              repeats: int = 3, agent_name: str = "my-agent", agent_version: str = "dev", base_seed: int = 2026) -> Report:
         ids = scenarios or [s["scenario_id"] for s in load_scenarios()]
+        self.experiment_id = self._pinned_id or f"sdk-{uuid.uuid4().hex[:12]}"
         runs = []
         for sid in ids:
             for r in range(repeats):
                 seed = stable_seed(base_seed, sid, r)
                 with self.episode(sid, seed, agent_name, agent_version,
-                                  run_id=f"{self.experiment_id}.{agent_version}.{sid[-4:]}.r{r}") as ep:
+                                  run_id=f"{self.experiment_id}.{agent_version}.{sid[-4:]}.r{r}", repeat=r) as ep:
                     try:
                         msg = agent_fn(ep.task, ep.tools, ep.context)
                     except ToolCallFailed as exc:
                         msg = f"I ran into a problem: {exc}"
                     ep.finish(msg or "")
-                ep.report["repeat"] = r
                 runs.append(ep.report)
         return Report(runs)
 
@@ -211,5 +216,12 @@ class CrashLab:
             return
         import httpx
 
-        httpx.post(f"{self.base_url.rstrip('/')}/api/v1/ingest/runs", json=report, timeout=30,
-                   headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}).raise_for_status()
+        r = httpx.post(f"{self.base_url.rstrip('/')}/api/v1/ingest/runs", json=report, timeout=30,
+                       headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})
+        if r.status_code >= 400:  # say what went wrong in words, not a bare HTTP traceback
+            try:
+                detail = r.json().get("detail", r.text)
+            except ValueError:
+                detail = r.text
+            raise RuntimeError(f"upload to {self.base_url} failed ({r.status_code}): {detail}. "
+                               "Check the api_key (create one under Integrations in the dashboard).")

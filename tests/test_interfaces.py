@@ -228,3 +228,37 @@ def test_restart_fails_experiments_its_workers_were_running(tmp_path, monkeypatc
     st.set_status("exp_interrupted", "RUNNING")
     app = create_app(db)
     assert app.state.store.db.execute("SELECT status FROM experiments WHERE id='exp_interrupted'").fetchone()[0] == "FAILED"
+
+
+def test_sdk_uploads_show_up_as_a_full_experiment(tmp_path, monkeypatch):
+    # A user's own agent, tested with the SDK, must appear in their dashboard like a built-in experiment.
+    monkeypatch.setenv("CRASHLAB_AUTH", "required")
+    from fastapi.testclient import TestClient
+
+    from server.app import create_app
+
+    app = create_app(str(tmp_path / "ingest.db"))
+    key = app.state.store.create_api_key("p_me", "sdk", ["read", "write"])["key"]
+    c = TestClient(app, headers={"Authorization": f"Bearer {key}"})
+
+    class Uploader(CrashLab):
+        def _upload(self, report):
+            r = c.post("/api/v1/ingest/runs", json=report)
+            assert r.status_code == 201, r.text
+
+    def blind(task, tools, ctx):
+        for _ in range(2):
+            try:
+                tools.issue_refund(order_id="ORD-1001", amount=4999)
+                break
+            except ToolCallFailed:
+                pass
+        return "Refund for ORD-1001 processed."
+
+    lab = Uploader()
+    lab.test(blind, ["ACL-ECOM-0002"], repeats=2)
+    exp = c.get(f"/api/v1/experiments/{lab.experiment_id}").json()
+    s = exp["summaries"]["my-agent@dev"]
+    assert s["episodes"] == 2 and exp["config"]["repeats"] == 2 and exp["failure_modes"]
+    assert any(m["category"] == "DUPLICATE_ACTION" for m in exp["failure_modes"])
+    assert lab.experiment_id.startswith("sdk-") and Uploader().experiment_id != lab.experiment_id  # no collisions

@@ -548,3 +548,15 @@ a:not(.btn):not(.fab):hover { text-decoration-thickness: 2px; }
 .account-chip .avatar { width: 26px; height: 26px; display: grid; place-items: center; background: var(--primary); color: var(--on-primary);
   font-family: var(--display); font-weight: 800; font-size: 13px; border-radius: var(--radius-s); }
 @media (max-width: 760px) { .account-chip .account-name { display: none; } .account-chip { padding: 0 3px; } }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* Integrations: "Connect your own agent" in three numbered steps */
+.connect-steps { list-style: none; counter-reset: cs; margin: 0; padding: 0; display: grid; gap: 22px; }
+.connect-steps > li { counter-increment: cs; display: grid; grid-template-columns: 30px minmax(0, 1fr); column-gap: 14px; }
+.connect-steps > li::before { content: counter(cs); grid-row: 1 / span 6; width: 26px; height: 26px; display: grid; place-items: center;
+  background: var(--primary); color: var(--on-primary); font: 800 13px var(--display); border-radius: var(--radius-s); }
+.connect-steps > li > * { grid-column: 2; }
+.connect-steps pre.code { margin: 10px 0 6px; }
+.btn.small { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.btn.danger-ghost { background: transparent; color: var(--signal-ink); border-color: color-mix(in srgb, var(--signal) 45%, var(--line)); }

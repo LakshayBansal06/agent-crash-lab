@@ -9,7 +9,7 @@ description = "Autonomous testing, debugging and reliability platform for AI age
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-dependencies = ["jsonschema>=4.20"]
+dependencies = ["jsonschema>=4.20", "httpx>=0.27"]  # httpx: the SDK uploads results
 
 [project.optional-dependencies]
 server = ["fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]

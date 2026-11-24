@@ -6,7 +6,9 @@ COPY crashlab ./crashlab
 COPY server ./server
 COPY web ./web
 COPY infrastructure/entrypoint.sh /entrypoint.sh
-RUN pip install --no-cache-dir -r requirements.lock ".[server]" && useradd -m crashlab && mkdir /data && chown crashlab /data \
+# The SDK wheel is served from /sdk/ so anyone can `pip install` it straight from the site.
+RUN pip install --no-cache-dir -r requirements.lock ".[server]" && pip wheel --no-deps --no-cache-dir -w web/sdk . \
+    && useradd -m crashlab && mkdir /data && chown crashlab /data \
     && chmod 755 /entrypoint.sh
 # Starts as root only long enough to give a host-mounted disk (Render) to the app user, then drops to it.
 # docker-compose runs it as `crashlab` from the start, with every capability dropped.
